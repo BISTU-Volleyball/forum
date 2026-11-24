@@ -200,13 +200,79 @@
     while (t.size > 100 * 1024 && tq > 0.4) { tq -= 0.1; t = await toB64(tc, tq); }
     return { data: r.b64, thumb: t.b64 };
   }
-  // 头像：取中间正方形，缩到 200×200，压到 40KB 以内
-  async function squareAvatar(file) {
-    const img = await loadImg(file);
-    const s = Math.min(img.width, img.height), sx = (img.width - s) / 2, sy = (img.height - s) / 2;
-    const c = document.createElement('canvas'); c.width = c.height = 200;
-    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 200, 200);
-    g.drawImage(img, sx, sy, s, s, 0, 0, 200, 200);
+  // 头像裁剪框：拖动移动、双指（或滚轮、滑块）缩放；返回 200×200 画布，取消返回 null
+  async function cropAvatar(file) {
+    const src = draw(await loadImg(file), 1600);
+    const W = src.width, H = src.height;
+    return new Promise(resolve => {
+      const box = document.createElement('div');
+      box.id = 'crop';
+      box.innerHTML = `<div class="ctitle">拖动调整位置，双指或拖动滑块缩放</div>
+        <div class="cwrap"><canvas></canvas><div class="cring"></div></div>
+        <div class="czoom"><span>－</span><input type="range" min="0" max="1000" value="0"><span>＋</span></div>
+        <div class="cbtns"><button class="btn l" data-a="no">取消</button><button class="btn o" data-a="ok">使用这张</button></div>`;
+      document.body.appendChild(box);
+      const cv = $('canvas', box), wrap = $('.cwrap', box), range = $('input', box);
+      const dpr = Math.min(3, window.devicePixelRatio || 1);
+      const S = Math.min(window.innerWidth - 32, window.innerHeight - 240, 380);
+      wrap.style.width = wrap.style.height = S + 'px';
+      cv.style.width = cv.style.height = S + 'px';
+      cv.width = cv.height = Math.round(S * dpr);
+      const g = cv.getContext('2d');
+      const minK = S / Math.min(W, H), maxK = minK * 5;
+      let k = minK, x = (S - W * k) / 2, y = (S - H * k) / 2;
+      const clamp = () => {
+        k = Math.max(minK, Math.min(maxK, k));
+        x = Math.min(0, Math.max(S - W * k, x));
+        y = Math.min(0, Math.max(S - H * k, y));
+      };
+      const paintC = () => {
+        clamp();
+        g.setTransform(dpr, 0, 0, dpr, 0, 0);
+        g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+        g.drawImage(src, x, y, W * k, H * k);
+        range.value = Math.round(Math.log(k / minK) / Math.log(maxK / minK) * 1000);
+      };
+      const zoomAt = (nk, cx, cy) => {
+        nk = Math.max(minK, Math.min(maxK, nk));
+        x = cx - (cx - x) * nk / k; y = cy - (cy - y) * nk / k; k = nk;
+        paintC();
+      };
+      paintC();
+      const pts = new Map();
+      let last = null;
+      const local = e => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+      const pinch = () => { const [a, b] = [...pts.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; };
+      cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, local(e)); last = pts.size === 2 ? pinch() : null; });
+      cv.addEventListener('pointermove', e => {
+        if (!pts.has(e.pointerId)) return;
+        const prev = pts.get(e.pointerId), cur = local(e);
+        pts.set(e.pointerId, cur);
+        if (pts.size === 1) { x += cur.x - prev.x; y += cur.y - prev.y; paintC(); }
+        else if (pts.size === 2) {
+          const p = pinch();
+          if (last) { x += p.cx - last.cx; y += p.cy - last.cy; zoomAt(k * p.d / last.d, p.cx, p.cy); }
+          last = p;
+        }
+      });
+      const up = e => { pts.delete(e.pointerId); last = pts.size === 2 ? pinch() : null; };
+      cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+      cv.addEventListener('wheel', e => { e.preventDefault(); const p = local(e); zoomAt(k * Math.exp(-e.deltaY / 500), p.x, p.y); }, { passive: false });
+      range.oninput = () => zoomAt(minK * Math.pow(maxK / minK, range.value / 1000), S / 2, S / 2);
+      $$('.czoom span', box).forEach((s, i) => s.onclick = () => zoomAt(k * (i ? 1.25 : 0.8), S / 2, S / 2));
+      box.addEventListener('click', e => {
+        const b = e.target.closest('button'); if (!b) return;
+        let out = null;
+        if (b.dataset.a === 'ok') {
+          out = document.createElement('canvas'); out.width = out.height = 200;
+          const og = out.getContext('2d'); og.fillStyle = '#fff'; og.fillRect(0, 0, 200, 200);
+          og.drawImage(src, -x / k, -y / k, S / k, S / k, 0, 0, 200, 200);
+        }
+        box.remove(); resolve(out);
+      });
+    });
+  }
+  async function encodeAvatar(c) {
     let q = 0.85, r = await toB64(c, q);
     while (r.size > 40 * 1024 && q > 0.4) { q -= 0.1; r = await toB64(c, q); }
     return r.b64;
@@ -810,7 +876,7 @@
     view.innerHTML = `<div class="form"><div class="prof" id="pv"><span id="pva">${avatar(me, 'l')}</span><div class="n">${esc(me.nick)}</div></div><br>
       <div class="fld"><span>头像图片</span></div>
       <div class="avops"><button class="mini f" id="avup">📷 上传头像</button>${me.av ? '<button class="mini" id="avrm">改用颜色头像</button>' : ''}</div>
-      <small class="avtip">会自动裁成正方形（取中间部分）并压缩到很小。请使用合适的图片，不符合公约的头像管理员会清除。</small>
+      <small class="avtip">选好图片后可以拖动、缩放选取头像范围，会自动压缩到很小。请使用合适的图片，不符合公约的头像管理员会清除。</small>
       <label class="fld"><span>昵称</span><input id="nick" maxlength="12" value="${esc(me.nick)}"><small>每月最多改 3 次</small></label>
       <div class="fld"><span>头像颜色${me.av ? '（没有上传头像图片时使用）' : ''}</span></div><div class="colors">${cfg.colors.map(c => `<span data-c="${esc(c)}" class="${c === color ? 'on' : ''}"></span>`).join('')}</div>
       <button class="btn" id="sv">保存</button></div>`;
@@ -822,7 +888,9 @@
       if (!f) return;
       const btn = $('#avup'); btn.disabled = true; btn.textContent = '处理中…';
       try {
-        const data = await squareAvatar(f);
+        const cc = await cropAvatar(f);
+        if (!cc) { btn.disabled = false; btn.textContent = '📷 上传头像'; return; }
+        const data = await encodeAvatar(cc);
         const r = await api('avatar', { data });
         me = { ...me, ...r.me }; meAt = 0; invalidate(); toast('头像已更新');
         pageProfile();

@@ -284,3 +284,15 @@ textarea.big { width: 100%; min-height: 200px; border: 1px solid #c4d3e4; border
 img.av { object-fit: cover; background: #e5ebf2; padding: 0; border: 0; }
 .avops { display: flex; gap: 8px; margin: -6px 0 4px; }
 .avtip { display: block; font-size: 12.5px; margin-bottom: 14px; }
+
+/* 头像裁剪框 */
+#crop { position: fixed; inset: 0; z-index: 80; background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 16px; color: #fff; }
+#crop .ctitle { font-size: 15px; }
+#crop .cwrap { position: relative; overflow: hidden; border-radius: 6px; }
+#crop canvas { display: block; touch-action: none; cursor: grab; }
+#crop .cring { position: absolute; inset: 0; pointer-events: none; border-radius: 50%; box-shadow: 0 0 0 9999px rgba(0,0,0,.45); border: 2px solid rgba(255,255,255,.85); }
+#crop .czoom { display: flex; align-items: center; gap: 10px; width: min(380px, 100%); }
+#crop .czoom span { font-size: 22px; width: 32px; text-align: center; cursor: pointer; user-select: none; }
+#crop .czoom input { flex: 1; accent-color: #EF7E00; }
+#crop .cbtns { display: flex; gap: 12px; width: min(380px, 100%); }
+#crop .cbtns .btn { margin: 0; }
