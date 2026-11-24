@@ -80,7 +80,9 @@
   const isAdminBoard = id => { const b = boardOf(id); return b && b.adminOnly; };
 
   // ---------------- 渲染小部件 ----------------
-  const avatar = (a, cls = '') => `<span class="av ${cls}" data-c="${esc(a.color || '#888')}">${esc((a.nick || '?').slice(0, 1))}</span>`;
+  const avatar = (a, cls = '') => a.avUrl
+    ? `<img class="av ${cls}" data-id="${esc(a.av)}" data-k="thumb" src="${esc(a.avUrl)}" alt="">`
+    : `<span class="av ${cls}" data-c="${esc(a.color || '#888')}">${esc((a.nick || '?').slice(0, 1))}</span>`;
   const ulink = (a, inner) => a.gone || !a.uid ? inner : `<span class="ulink" data-u="${esc(a.uid)}">${inner}</span>`;
   const who = a => `${ulink(a, `${avatar(a)}<span class="nk">${esc(a.nick)}</span>`)}${a.role ? `<span class="badge">${a.role === 'super' ? '超管' : '管理员'}</span>` : ''}${a.college ? `<span class="col">${esc(a.college)}</span>` : ''}`;
   const btag = id => { const b = boardOf(id); return b ? `<span class="tag ${esc(b.color)}">${esc(b.short)}</span>` : ''; };
@@ -197,6 +199,17 @@
     let tq = 0.72, t = await toB64(tc, tq);
     while (t.size > 100 * 1024 && tq > 0.4) { tq -= 0.1; t = await toB64(tc, tq); }
     return { data: r.b64, thumb: t.b64 };
+  }
+  // 头像：取中间正方形，缩到 200×200，压到 40KB 以内
+  async function squareAvatar(file) {
+    const img = await loadImg(file);
+    const s = Math.min(img.width, img.height), sx = (img.width - s) / 2, sy = (img.height - s) / 2;
+    const c = document.createElement('canvas'); c.width = c.height = 200;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 200, 200);
+    g.drawImage(img, sx, sy, s, s, 0, 0, 200, 200);
+    let q = 0.85, r = await toB64(c, q);
+    while (r.size > 40 * 1024 && q > 0.4) { q -= 0.1; r = await toB64(c, q); }
+    return r.b64;
   }
   // 网关单次请求上限约 100KB：切成小段上传（每段 base64 ≤ 64000 字符），3 段并行
   async function uploadImage(z) {
@@ -770,7 +783,7 @@
         <a class="li" href="#/me/posts">📝 我的帖子<span class="r">›</span></a>
         <a class="li" href="#/me/joins">🏐 我报名的约球<span class="r">›</span></a></div>
       <div class="list">
-        <a class="li" href="#/me/profile">✏️ 修改昵称 / 头像颜色<span class="r">›</span></a>
+        <a class="li" href="#/me/profile">✏️ 修改昵称 / 头像<span class="r">›</span></a>
         <div class="li" id="sc">🏫 在昵称旁显示学院<span class="sw ${me.showCollege ? 'on' : ''}"></span></div>
         <div class="li" id="sd">✉️ 接收私信<span class="sw ${me.allowDm ? 'on' : ''}"></span></div>
         <a class="li" href="#/me/pw">🔑 修改密码<span class="r">›</span></a></div>
@@ -794,13 +807,32 @@
     frame({ title: '昵称与头像', back: true });
     await loadMe();
     let color = me.color;
-    view.innerHTML = `<div class="form"><div class="prof" id="pv">${avatar(me, 'l')}<div class="n">${esc(me.nick)}</div></div><br>
+    view.innerHTML = `<div class="form"><div class="prof" id="pv"><span id="pva">${avatar(me, 'l')}</span><div class="n">${esc(me.nick)}</div></div><br>
+      <div class="fld"><span>头像图片</span></div>
+      <div class="avops"><button class="mini f" id="avup">📷 上传头像</button>${me.av ? '<button class="mini" id="avrm">改用颜色头像</button>' : ''}</div>
+      <small class="avtip">会自动裁成正方形（取中间部分）并压缩到很小。请使用合适的图片，不符合公约的头像管理员会清除。</small>
       <label class="fld"><span>昵称</span><input id="nick" maxlength="12" value="${esc(me.nick)}"><small>每月最多改 3 次</small></label>
-      <div class="fld"><span>头像颜色</span></div><div class="colors">${cfg.colors.map(c => `<span data-c="${esc(c)}" class="${c === color ? 'on' : ''}"></span>`).join('')}</div>
+      <div class="fld"><span>头像颜色${me.av ? '（没有上传头像图片时使用）' : ''}</span></div><div class="colors">${cfg.colors.map(c => `<span data-c="${esc(c)}" class="${c === color ? 'on' : ''}"></span>`).join('')}</div>
       <button class="btn" id="sv">保存</button></div>`;
     paint();
-    $$('.colors span').forEach(s => s.onclick = () => { color = s.dataset.c; $$('.colors span').forEach(x => x.classList.toggle('on', x === s)); $('#pv .av').style.background = color; });
-    $('#nick').oninput = e => { $('#pv .n').textContent = e.target.value; $('#pv .av').textContent = e.target.value.slice(0, 1) || '?'; };
+    const fi = document.createElement('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.hidden = true; view.appendChild(fi);
+    $('#avup').onclick = () => fi.click();
+    fi.onchange = async () => {
+      const f = fi.files[0]; fi.value = '';
+      if (!f) return;
+      const btn = $('#avup'); btn.disabled = true; btn.textContent = '处理中…';
+      try {
+        const data = await squareAvatar(f);
+        const r = await api('avatar', { data });
+        me = { ...me, ...r.me }; meAt = 0; invalidate(); toast('头像已更新');
+        pageProfile();
+      } catch (e) { if (!e.data) toast(e.message || '上传失败'); btn.disabled = false; btn.textContent = '📷 上传头像'; }
+    };
+    const rm = $('#avrm');
+    if (rm) rm.onclick = async () => { const r = await api('avatar', { remove: true }); me = { ...me, ...r.me }; meAt = 0; invalidate(); toast('已改用颜色头像'); pageProfile(); };
+    const pvAv = () => $('#pv .av');
+    $$('.colors span').forEach(s => s.onclick = () => { color = s.dataset.c; $$('.colors span').forEach(x => x.classList.toggle('on', x === s)); if (pvAv().tagName === 'SPAN') pvAv().style.background = color; });
+    $('#nick').oninput = e => { $('#pv .n').textContent = e.target.value; if (pvAv().tagName === 'SPAN') pvAv().textContent = e.target.value.slice(0, 1) || '?'; };
     $('#sv').onclick = async () => {
       const r = await api('profile', { nick: $('#nick').value.trim(), color });
       me = { ...me, ...r.me }; invalidate(); toast('已保存'); history.back();
@@ -933,7 +965,7 @@
       ${u.role === 'super' || u.uid === me.uid ? '' : `<div class="ops">
         ${me.role === 'super' ? `<button class="mini o" data-role>${u.role === 'admin' ? '撤销管理员' : '设为管理员'}</button>` : ''}
         ${u.role === 'admin' && me.role !== 'super' ? '' : `${u.muteUntil > Date.now() ? '<button class="mini" data-unmute>解除禁言</button>' : '<button class="mini" data-mute>禁言</button>'}
-        <button class="mini" data-reset>重置密码</button><button class="mini r" data-ban>${u.status === 'banned' ? '恢复账号' : '停用账号'}</button>`}
+        <button class="mini" data-reset>重置密码</button>${u.av ? '<button class="mini" data-clav>清除头像</button>' : ''}<button class="mini r" data-ban>${u.status === 'banned' ? '恢复账号' : '停用账号'}</button>`}
         <a class="mini" href="#/user/${esc(u.uid)}">主页</a></div>`}</div>`).join('');
     paint(ab);
     $('#go').onclick = () => adminUsers(ab, $('#q').value.trim());
@@ -944,6 +976,7 @@
       const again = () => adminUsers(ab, $('#q').value.trim());
       on('[data-role]', async () => { if (!await dialog({ title: u.role === 'admin' ? `撤销「${u.nick}」的管理员？` : `把「${u.nick}」设为管理员？`, text: u.role === 'admin' ? '' : '管理员可以审核注册、处理举报、删帖、禁言，但不能任免管理员。' })) return; await api('admin.setRole', { uid: u.uid, role: u.role === 'admin' ? 'user' : 'admin' }); toast('已设置'); again(); });
       on('[data-mute]', async () => { const v = await dialog({ title: `禁言「${u.nick}」`, text: '禁言期间只能看帖，不能发帖、回复、报名。填写天数：', input: true, type: 'number', value: '7', ok: '禁言' }); if (v == null) return; await api('admin.mute', { uid: u.uid, days: v }); toast('已禁言'); again(); });
+      on('[data-clav]', async () => { if (!await dialog({ title: `清除「${u.nick}」的头像？`, text: '会改回颜色头像，并通知对方。', danger: true, ok: '清除' })) return; await api('admin.clearAvatar', { uid: u.uid }); toast('已清除'); again(); });
       on('[data-unmute]', async () => { await api('admin.mute', { uid: u.uid, days: 0 }); toast('已解除'); again(); });
       on('[data-reset]', async () => { if (!await dialog({ title: `重置「${u.nick}」的密码？`, text: '会生成 8 位临时密码，对方登录后必须改密码。' })) return; const r = await api('admin.resetPassword', { uid: u.uid }); await dialog({ title: '临时密码', text: `请私下告诉 ${esc(u.name)}：<b>${esc(r.temp)}</b><br>（关闭后不再显示）`, ok: '知道了' }); });
       on('[data-ban]', async () => { const ban = u.status !== 'banned'; if (!await dialog({ title: ban ? `停用「${u.nick}」的账号？` : `恢复「${u.nick}」的账号？`, text: ban ? '停用后无法登录，已发内容保留。' : '', danger: ban })) return; await api('admin.ban', { uid: u.uid, on: ban }); toast('已设置'); again(); });

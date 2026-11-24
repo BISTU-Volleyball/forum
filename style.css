@@ -279,3 +279,8 @@ textarea.big { width: 100%; min-height: 200px; border: 1px solid #c4d3e4; border
 .bb { max-width: 74%; background: #fff; border: 1px solid #e1e7ee; border-radius: 4px 14px 14px 14px; padding: 7px 11px; font-size: 15.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; cursor: pointer; }
 .bub.me .bb { background: var(--blue); color: #fff; border-color: var(--blue); border-radius: 14px 4px 14px 14px; cursor: default; }
 .bub.me .bb a { color: #fff; text-decoration: underline; }
+
+/* 头像图片 */
+img.av { object-fit: cover; background: #e5ebf2; padding: 0; border: 0; }
+.avops { display: flex; gap: 8px; margin: -6px 0 4px; }
+.avtip { display: block; font-size: 12.5px; margin-bottom: 14px; }
