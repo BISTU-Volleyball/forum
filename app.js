@@ -27,7 +27,7 @@
   let me = null, meAt = 0;
   let cfg = JSON.parse(localStorage.getItem('pf_cfg') || 'null');
   const listCache = {};
-  let navDepth = 0, curKey = null;
+  let navDepth = 0, curKey = null, pollTimer = 0;
 
   function toast(msg, ms = 2000) {
     const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -64,7 +64,7 @@
   }
   function updateDots() {
     const d = $('#dot'), d2 = $('#dot2');
-    const n = me ? me.unread : 0;
+    const n = me ? (me.unread || 0) + (me.dmUnread || 0) : 0;
     d.hidden = !n; d.textContent = n > 99 ? '99+' : n;
     const a = me ? (me.pending || 0) + (me.reports || 0) : 0;
     d2.hidden = !a; d2.textContent = a;
@@ -81,7 +81,8 @@
 
   // ---------------- 渲染小部件 ----------------
   const avatar = (a, cls = '') => `<span class="av ${cls}" data-c="${esc(a.color || '#888')}">${esc((a.nick || '?').slice(0, 1))}</span>`;
-  const who = a => `${avatar(a)}<span class="nk">${esc(a.nick)}</span>${a.role ? `<span class="badge">${a.role === 'super' ? '超管' : '管理员'}</span>` : ''}${a.college ? `<span class="col">${esc(a.college)}</span>` : ''}`;
+  const ulink = (a, inner) => a.gone || !a.uid ? inner : `<span class="ulink" data-u="${esc(a.uid)}">${inner}</span>`;
+  const who = a => `${ulink(a, `${avatar(a)}<span class="nk">${esc(a.nick)}</span>`)}${a.role ? `<span class="badge">${a.role === 'super' ? '超管' : '管理员'}</span>` : ''}${a.college ? `<span class="col">${esc(a.college)}</span>` : ''}`;
   const btag = id => { const b = boardOf(id); return b ? `<span class="tag ${esc(b.color)}">${esc(b.short)}</span>` : ''; };
   function paint(root = view) {
     $$('[data-c]', root).forEach(el => { el.style.background = el.dataset.c; });
@@ -122,6 +123,14 @@
         }
       } catch (err) { /* 忽略 */ }
     }, 250);
+  }, true);
+
+  // 点头像/昵称进会员主页
+  document.addEventListener('click', e => {
+    const u = e.target.closest('[data-u]');
+    if (!u) return;
+    e.preventDefault(); e.stopPropagation();
+    location.hash = '#/user/' + u.dataset.u;
   }, true);
 
   // 看大图
@@ -264,6 +273,7 @@
     document.body.classList.remove('hasbar');
     $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.n === nav));
     const rb = $('.rbar'); if (rb) rb.remove();
+    clearInterval(pollTimer); pollTimer = 0;
     const fab = $('.fab'); if (fab) fab.remove();
   }
   $('#back').addEventListener('click', () => { if (navDepth > 1) history.back(); else location.hash = '#/'; });
@@ -319,7 +329,8 @@
     <p>1. 收集：学院/部门、工号、姓名，只用于管理员核实你是协会会员本人。</p>
     <p>2. 谁能看到：姓名和工号只有你自己和论坛管理员能看到；其他会员只看到你的昵称、头像颜色，以及学院（可在"我的"里关闭）。</p>
     <p>3. 存放：腾讯云 CloudBase（上海），密码只存加密后的摘要，任何人都看不到原密码。</p>
-    <p>4. 注销：可随时在"我的 → 注销账号"自助注销，注销后删除姓名、工号、学院和密码，已发内容的作者显示为"已注销用户"。</p>`;
+    <p>4. 私信：只有对话双方能看到；被举报的那一条私信管理员可以看到，用于处理骚扰。</p>
+    <p>5. 注销：可随时在"我的 → 注销账号"自助注销，注销后删除姓名、工号、学院和密码，已发内容的作者显示为"已注销用户"。</p>`;
 
   async function pageRegister() {
     frame({ title: '申请注册', back: true });
@@ -327,7 +338,7 @@
     view.innerHTML = `<form class="form" id="f">
       <p class="lead">排友圈仅限信息科大教职工排协会员使用。提交后由管理员人工审核，通过后用工号和密码登录。</p>
       ${regForm()}
-      <div class="privacy">${PRIVACY}<p>5. 使用排友圈请遵守 <a href="#/rules">排友圈公约</a>：文明友善、就事论事。</p></div>
+      <div class="privacy">${PRIVACY}<p>6. 使用排友圈请遵守 <a href="#/rules">排友圈公约</a>：文明友善、就事论事。</p></div>
       <button class="btn o">我已阅读上述说明和公约，提交申请</button>
       <p class="alt">已有账号？<a href="#/login">去登录</a></p></form>`;
     bindEyes(view);
@@ -442,8 +453,8 @@
       const main = r.deleted ? '<div class="gone">该楼已删除</div>'
         : r.hiddenForMe ? '<div class="gone">该楼被多位会员举报，等待管理员处理</div>'
         : `${r.quote ? `<div class="quote">回复 ${r.quote.floor}楼 ${esc(r.quote.nick)}：${esc(r.quote.text)}</div>` : ''}${r.body ? `<div class="body">${linkify(r.body)}</div>` : ''}${imgGrid(r.images)}`;
-      return `<div class="floor" id="f${r.floor}" data-id="${esc(r.id)}">${avatar(r.author, 'm')}<div class="main">
-        <div class="hd"><span class="nk">${esc(r.author.nick)}</span>${r.author.role ? `<span class="badge">${r.author.role === 'super' ? '超管' : '管理员'}</span>` : ''}${r.author.college ? `<span class="col">${esc(r.author.college)}</span>` : ''}<span>· ${rel(r.at)}${r.editedAt ? ' · 已编辑' : ''}</span><span class="fl">${r.floor}楼</span></div>
+      return `<div class="floor" id="f${r.floor}" data-id="${esc(r.id)}">${ulink(r.author, avatar(r.author, 'm'))}<div class="main">
+        <div class="hd">${ulink(r.author, `<span class="nk">${esc(r.author.nick)}</span>`)}${r.author.role ? `<span class="badge">${r.author.role === 'super' ? '超管' : '管理员'}</span>` : ''}${r.author.college ? `<span class="col">${esc(r.author.college)}</span>` : ''}<span>· ${rel(r.at)}${r.editedAt ? ' · 已编辑' : ''}</span><span class="fl">${r.floor}楼</span></div>
         ${main}${r.hidden && !r.hiddenForMe ? '<div class="hint warn">该楼被多人举报，暂时对其他人隐藏</div>' : ''}
         ${r.deleted || r.hiddenForMe ? '' : `<div class="ops"><a data-q>回复</a><a data-l class="${r.liked ? 'on' : ''}">👍 ${r.likes || '赞'}</a><a data-m>⋯</a></div>`}</div></div>`;
     }
@@ -608,14 +619,20 @@
   }
 
   // ---------------- 消息 ----------------
-  async function pageMsg() {
+  function msgTabs(t) {
+    return `<div class="atabs"><a href="#/msg" class="${t === 'n' ? 'on' : ''}">通知${me && me.unread ? `<b>${me.unread}</b>` : ''}</a><a href="#/msg?t=dm" class="${t === 'dm' ? 'on' : ''}">私信${me && me.dmUnread ? `<b>${me.dmUnread}</b>` : ''}</a></div>`;
+  }
+  async function pageMsg(q) {
     frame({ nav: 'msg', title: '消息' });
-    view.innerHTML = '<div class="loading">加载中…</div>';
+    await loadMe().catch(() => {});
+    if (q && q.get('t') === 'dm') return pageDmList();
+    view.innerHTML = msgTabs('n') + '<div id="ml"><div class="loading">加载中…</div></div>';
+    const host = $('#ml');
     let page = 0, list = [];
     const load = async () => {
       const r = await api('notices', { page });
       list = list.concat(r.list);
-      if (page === 0 && me) { me.unread = 0; updateDots(); }
+      if (page === 0 && me) { me.unread = 0; updateDots(); const tb = $('.atabs a b', view); if (tb && !tb.closest('[href*=dm]')) tb.remove(); }
       const txt = n => {
         const t = esc(n.title || '');
         switch (n.type) {
@@ -626,15 +643,115 @@
           default: return esc(n.text);
         }
       };
-      view.innerHTML = list.length ? list.map(n => `<a class="msg ${n.read ? '' : 'unread'}" ${n.postId ? `href="#/p/${esc(n.postId)}${n.floor ? '?f=' + n.floor : ''}"` : ''}>
+      host.innerHTML = list.length ? list.map(n => `<a class="msg ${n.read ? '' : 'unread'}" ${n.postId ? `href="#/p/${esc(n.postId)}${n.floor ? '?f=' + n.floor : ''}"` : ''}>
           ${n.type === 'system' || !n.from ? '<span class="av m sysav">📢</span>' : avatar(n.from, 'm')}
           <div class="c">${n.type === 'system' ? '<b>系统通知</b>　' : `<b>${esc(n.from.nick)}</b> `}${txt(n)}</div><span class="tm">${rel(n.at)}</span></a>`).join('')
           + (r.more ? '<button class="more-btn">更多</button>' : '')
-        : '<div class="empty"><b>🔔</b>暂时没有消息</div>';
+        : '<div class="empty"><b>🔔</b>暂时没有通知</div>';
       paint();
-      const mb = $('.more-btn', view); if (mb) mb.onclick = () => { page++; load(); };
+      const mb = $('.more-btn', host); if (mb) mb.onclick = () => { page++; load(); };
     };
     await load();
+  }
+
+  async function pageDmList() {
+    view.innerHTML = msgTabs('dm') + '<div id="ml"><div class="loading">加载中…</div></div>';
+    const { list } = await api('dmList');
+    if (me) { me.dmUnread = list.reduce((s, c) => s + c.unread, 0); updateDots(); }
+    $('#ml').innerHTML = list.length ? list.map(c => `<a class="msg ${c.unread ? 'unread' : ''}" href="#/dm/${esc(c.peer.uid)}">${avatar(c.peer, 'm')}
+        <div class="c"><b>${esc(c.peer.nick)}</b>${c.unread ? ` <span class="cnt">${c.unread}</span>` : ''}<div class="q">${c.lastMine ? '我：' : ''}${esc(c.lastText)}</div></div><span class="tm">${rel(c.lastAt)}</span></a>`).join('')
+      : '<div class="empty"><b>✉️</b>还没有私信<br><br>在 <a href="#/members">会员</a> 里点开某位会员，就可以给 TA 发私信</div>';
+    paint();
+  }
+
+  // ---------------- 会员名录 / 会员主页 / 私信对话 ----------------
+  async function pageMembers() {
+    frame({ nav: 'members', title: '会员' });
+    view.innerHTML = '<div class="loading">加载中…</div>';
+    const { list } = await api('members');
+    const render = (qv = '') => {
+      const k = qv.trim();
+      const rows = k ? list.filter(u => u.nick.includes(k) || (u.college || '').includes(k)) : list;
+      $('#mlist').innerHTML = rows.length ? rows.map(u => `<a class="mem" href="#/user/${esc(u.uid)}">${avatar(u, 'm')}<div class="mi"><b>${esc(u.nick)}</b>${u.role ? `<span class="badge">${u.role === 'super' ? '超管' : '管理员'}</span>` : ''}<small>${esc(u.college || ' ')}</small></div></a>`).join('') : '<div class="empty">没有找到</div>';
+      paint($('#mlist'));
+    };
+    view.innerHTML = `<div class="search"><input id="mq" placeholder="搜昵称 / 学院"></div><div class="sec">共 ${list.length} 位会员</div><div class="mems" id="mlist"></div>`;
+    $('#mq').oninput = e => render(e.target.value);
+    render();
+  }
+
+  async function pageUser(uid) {
+    frame({ title: '会员主页', back: true });
+    view.innerHTML = '<div class="loading">加载中…</div>';
+    await loadMe().catch(() => {});
+    const { user: u } = await api('user', { uid });
+    view.innerHTML = `<div class="prof">${avatar(u, 'l')}<div><div class="n">${esc(u.nick)}${u.role ? ` <span class="badge">${u.role === 'super' ? '超管' : '管理员'}</span>` : ''}</div>
+        <div class="s">${u.college ? esc(u.college) + ' · ' : ''}${u.at ? `${new Date(u.at).getFullYear()}年${new Date(u.at).getMonth() + 1}月加入` : ''}</div>
+        <div class="s">发帖 ${u.posts || 0} · 回复 ${u.replies || 0}</div></div></div>
+      ${u.me ? '' : !u.active ? '<div class="hint">该账号已注销或停用</div>' : u.allowDm || isAdmin() ? `<div class="form"><a class="btn" href="#/dm/${esc(u.uid)}">✉️ 发私信</a></div>` : '<div class="hint">对方设置了不接收私信</div>'}
+      <div class="sec">TA 的帖子</div><div id="list"><div class="loading">加载中…</div></div>`;
+    paint();
+    if (u.gone) { $('#list').innerHTML = ''; return; }
+    const r = await api('posts', { uid });
+    $('#list').innerHTML = r.list.length ? r.list.map(card).join('') : '<div class="empty">还没有发过帖子</div>';
+    paint($('#list'));
+  }
+
+  async function pageDm(uid) {
+    frame({ title: '私信', back: true });
+    view.innerHTML = '<div class="loading">加载中…</div>';
+    await loadMe().catch(() => {});
+    let d = await api('dmThread', { uid });
+    const peer = d.peer;
+    $('#ttl').textContent = peer.nick;
+    let msgs = d.list, more = d.more;
+    const canSend = peer.active && (peer.allowDm || isAdmin()) && uid !== me.uid;
+    const bubble = m => `<div class="bub ${m.mine ? 'me' : ''}" data-id="${esc(m.id)}">${m.mine ? '' : avatar(peer, 'm')}<div class="bb">${m.deleted ? '<i>该消息已被管理员删除</i>' : linkify(m.body)}</div></div>`;
+    function render(keepBottom = true) {
+      let lastT = 0;
+      view.innerHTML = `<div class="chat"><div class="tip-top">私信只有你们两人能看到。遇到骚扰，点一下对方的消息就能举报。</div>
+        ${more ? '<button class="more-btn" id="older">查看更早的消息</button>' : ''}
+        ${msgs.map(m => { const t = m.at - lastT > 5 * 60e3 ? `<div class="ctime">${esc(rel(m.at))}</div>` : ''; lastT = m.at; return t + bubble(m); }).join('') || '<div class="empty">打个招呼吧 👋</div>'}</div>`;
+      paint();
+      if (keepBottom) window.scrollTo(0, document.body.scrollHeight);
+      const ob = $('#older');
+      if (ob) ob.onclick = async () => { const r = await api('dmThread', { uid, before: msgs[0].at }); msgs = r.list.concat(msgs); more = r.more; render(false); window.scrollTo(0, 0); };
+      $$('.bub:not(.me) .bb', view).forEach(el => el.onclick = () => {
+        const id = el.parentElement.dataset.id;
+        sheet('', [{ label: '举报这条私信', danger: true, fn: async () => {
+          const v = await dialog({ title: '举报私信', text: '管理员只会看到这一条被举报的消息。', input: true, placeholder: '原因（如骚扰、广告）', ok: '提交举报' });
+          if (v == null) return; await api('report', { type: 'dm', id, reason: v }); toast('已举报，管理员会尽快处理');
+        } }]);
+      });
+    }
+    render();
+    if (me) { me.dmUnread = Math.max(0, (me.dmUnread || 0)); meAt = 0; }
+    if (canSend) {
+      document.body.insertAdjacentHTML('beforeend', `<div class="rbar"><div class="in"><div class="line"><textarea rows="1" maxlength="1000" placeholder="发私信…"></textarea><button class="sb" disabled>发送</button></div></div></div>`);
+      document.body.classList.add('hasbar');
+      const rb = $('.rbar'), ta = $('textarea', rb), sb = $('.sb', rb);
+      const upd = () => { sb.disabled = !ta.value.trim(); ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight + 2) + 'px'; };
+      ta.oninput = upd;
+      sb.onclick = async () => {
+        sb.disabled = true;
+        try { const r = await api('dmSend', { to: uid, body: ta.value }); msgs.push(r.msg); ta.value = ''; render(); } catch (e) { /* 已提示 */ } finally { upd(); }
+      };
+    } else {
+      document.body.insertAdjacentHTML('beforeend', `<div class="rbar"><div class="in locked">${uid === me.uid ? '不能给自己发私信' : !peer.active ? '该账号已注销或停用' : '对方设置了不接收私信'}</div></div>`);
+      document.body.classList.add('hasbar');
+    }
+    // 打开对话时每 10 秒查一次新消息（页面在后台时不查，10 分钟后停止）
+    const started = Date.now();
+    pollTimer = setInterval(async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - started > 600e3) { clearInterval(pollTimer); return; }
+      const after = msgs.length ? msgs[msgs.length - 1].at : 0;
+      try {
+        const r = await api('dmThread', { uid, after: after || 1 }, { silent: true });
+        const fresh = r.list.filter(m => !msgs.some(x => x.id === m.id));
+        if (fresh.length) { const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80; msgs = msgs.concat(fresh); render(atBottom); }
+      } catch (e) { /* 忽略 */ }
+    }, 10000);
   }
 
   // ---------------- 我的 ----------------
@@ -648,11 +765,14 @@
       ${a ? `<div class="list"><a class="li" href="#/admin/pending">🛠️ 管理后台<span class="r">${me.pending ? `<span class="cnt">审核 ${me.pending}</span> ` : ''}${me.reports ? `<span class="cnt">举报 ${me.reports}</span>` : ''} ›</span></a></div>` : ''}
       <div class="list">
         <a class="li" href="#/msg">🔔 消息<span class="r">${me.unread ? `<span class="cnt">${me.unread}</span>` : ''} ›</span></a>
+        <a class="li" href="#/msg?t=dm">✉️ 私信<span class="r">${me.dmUnread ? `<span class="cnt">${me.dmUnread}</span>` : ''} ›</span></a>
+        <a class="li" href="#/user/${esc(me.uid)}">🪪 我的主页<span class="r">›</span></a>
         <a class="li" href="#/me/posts">📝 我的帖子<span class="r">›</span></a>
         <a class="li" href="#/me/joins">🏐 我报名的约球<span class="r">›</span></a></div>
       <div class="list">
         <a class="li" href="#/me/profile">✏️ 修改昵称 / 头像颜色<span class="r">›</span></a>
         <div class="li" id="sc">🏫 在昵称旁显示学院<span class="sw ${me.showCollege ? 'on' : ''}"></span></div>
+        <div class="li" id="sd">✉️ 接收私信<span class="sw ${me.allowDm ? 'on' : ''}"></span></div>
         <a class="li" href="#/me/pw">🔑 修改密码<span class="r">›</span></a></div>
       <div class="list">
         <a class="li" href="#/a2hs">📱 添加到手机桌面<span class="r">›</span></a>
@@ -665,6 +785,7 @@
         <a class="li danger" href="#/me/del">注销账号</a></div>
       <p class="alt">排友圈 · 信息科大教职工排协会员交流区</p>`;
     paint();
+    $('#sd').onclick = async () => { const r = await api('profile', { allowDm: !me.allowDm }); me = { ...me, ...r.me }; toast(me.allowDm ? '已开启接收私信' : '已关闭，其他会员不能再给你发私信'); pageMe(); };
     $('#sc').onclick = async () => { const r = await api('profile', { showCollege: !me.showCollege }); me = { ...me, ...r.me }; invalidate(); pageMe(); };
     $('#lo').onclick = async () => { if (await dialog({ title: '退出登录？', ok: '退出' })) logout(); };
   }
@@ -795,9 +916,9 @@
   }
   async function adminReports(ab) {
     const { list } = await api('admin.reports');
-    ab.innerHTML = list.length ? list.map((r, i) => `<div class="acard" data-i="${i}"><div class="h">${r.type === 'reply' ? '回复' : '帖子'}被举报 ${r.n} 次${r.hidden ? '（已自动隐藏）' : ''}${r.deleted ? '（已删除）' : ''}</div>
+    ab.innerHTML = list.length ? list.map((r, i) => `<div class="acard" data-i="${i}"><div class="h">${r.type === 'dm' ? '私信' : r.type === 'reply' ? '回复' : '帖子'}被举报 ${r.n} 次${r.hidden ? '（已自动隐藏）' : ''}${r.deleted ? '（已删除）' : ''}</div>
       <div class="d">作者：${esc(r.author.nick)}</div><div class="d">内容：${esc(r.text)}</div><div class="d">理由：${r.reasons.map(esc).join('；')}</div>
-      <div class="ops"><a class="mini" href="#/p/${esc(r.postId)}">查看</a><button class="mini r" data-del>删除内容</button><button class="mini" data-ign>忽略（恢复显示）</button></div></div>`).join('') : '<div class="empty"><b>✅</b>没有待处理的举报</div>';
+      <div class="ops">${r.type === 'dm' ? '' : `<a class="mini" href="#/p/${esc(r.postId)}">查看</a>`}<button class="mini r" data-del>删除内容</button><button class="mini" data-ign>忽略（恢复显示）</button></div></div>`).join('') : '<div class="empty"><b>✅</b>没有待处理的举报</div>';
     $$('.acard', ab).forEach(c => {
       const r = list[c.dataset.i];
       $('[data-del]', c).onclick = async () => { await api('admin.resolve', { type: r.type, target: r.target, do: 'delete' }); toast('已删除'); c.remove(); invalidate(); meAt = 0; };
@@ -813,7 +934,7 @@
         ${me.role === 'super' ? `<button class="mini o" data-role>${u.role === 'admin' ? '撤销管理员' : '设为管理员'}</button>` : ''}
         ${u.role === 'admin' && me.role !== 'super' ? '' : `${u.muteUntil > Date.now() ? '<button class="mini" data-unmute>解除禁言</button>' : '<button class="mini" data-mute>禁言</button>'}
         <button class="mini" data-reset>重置密码</button><button class="mini r" data-ban>${u.status === 'banned' ? '恢复账号' : '停用账号'}</button>`}
-        <a class="mini" href="#/u/${esc(u.uid)}?n=${encodeURIComponent(u.nick)}">看帖子</a></div>`}</div>`).join('');
+        <a class="mini" href="#/user/${esc(u.uid)}">主页</a></div>`}</div>`).join('');
     paint(ab);
     $('#go').onclick = () => adminUsers(ab, $('#q').value.trim());
     $('#q').onkeydown = e => { if (e.key === 'Enter') $('#go').click(); };
@@ -887,7 +1008,10 @@
       if (head === 'p') return await pagePost(seg[1], q);
       if (head === 'new') return await pageCompose(q);
       if (head === 'edit') return await pageCompose(q, seg[1]);
-      if (head === 'msg') return await pageMsg();
+      if (head === 'msg') return await pageMsg(q);
+      if (head === 'members') return await pageMembers();
+      if (head === 'user') return await pageUser(seg[1]);
+      if (head === 'dm') return await pageDm(seg[1]);
       if (head === 'me') {
         if (!seg[1]) return await pageMe();
         if (seg[1] === 'posts') return await pagePostList('我的帖子', 'posts', { mine: true });

@@ -258,3 +258,24 @@ textarea.big { width: 100%; min-height: 200px; border: 1px solid #c4d3e4; border
 .agree { display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 15px; margin: 4px 0 12px; }
 .agree input { width: 19px; height: 19px; }
 .wel-tip { font-size: 13.5px; margin: 12px 0 2px; }
+
+/* 会员名录 */
+.ulink { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.floor > .ulink { align-self: flex-start; }
+.mems { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 8px 16px; }
+.mem { display: flex; align-items: center; gap: 9px; background: #fff; border: 1px solid #e3e9f0; border-radius: 10px; padding: 9px 10px; color: #111; min-width: 0; }
+.mem .mi { min-width: 0; display: flex; flex-direction: column; }
+.mem .mi b { font-size: 15px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mem .mi small { font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mem .badge { align-self: flex-start; margin-top: 1px; }
+.msg .cnt { background: var(--red); color: #fff; border-radius: 9px; font-size: 11px; padding: 0 6px; font-weight: 700; }
+
+/* 私信对话 */
+.chat { padding: 8px 10px 16px; }
+.tip-top { font-size: 12.5px; text-align: center; background: var(--soft); border-radius: 6px; padding: 5px 8px; margin-bottom: 8px; }
+.ctime { text-align: center; font-size: 12px; margin: 12px 0 6px; }
+.bub { display: flex; align-items: flex-end; gap: 7px; margin: 7px 0; }
+.bub.me { justify-content: flex-end; }
+.bb { max-width: 74%; background: #fff; border: 1px solid #e1e7ee; border-radius: 4px 14px 14px 14px; padding: 7px 11px; font-size: 15.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; cursor: pointer; }
+.bub.me .bb { background: var(--blue); color: #fff; border-color: var(--blue); border-radius: 14px 4px 14px 14px; cursor: default; }
+.bub.me .bb a { color: #fff; text-decoration: underline; }
