@@ -181,11 +181,31 @@
   }
   async function compress(file) {
     const img = await loadImg(file);
-    let c = draw(img, 1280), q = 0.82, r = await toB64(c, q);
-    while (r.size > 550 * 1024 && q > 0.5) { q -= 0.1; r = await toB64(c, q); }
-    if (r.size > 550 * 1024) { c = draw(img, 960); r = await toB64(c, 0.65); }
-    const t = await toB64(draw(img, 420), 0.72);
+    let c = draw(img, 1280), q = 0.8, r = await toB64(c, q);
+    while (r.size > 400 * 1024 && q > 0.5) { q -= 0.1; r = await toB64(c, q); }
+    if (r.size > 400 * 1024) { c = draw(img, 960); r = await toB64(c, 0.65); }
+    const tc = draw(img, 420);
+    let tq = 0.72, t = await toB64(tc, tq);
+    while (t.size > 100 * 1024 && tq > 0.4) { tq -= 0.1; t = await toB64(tc, tq); }
     return { data: r.b64, thumb: t.b64 };
+  }
+  // 网关单次请求上限约 100KB：切成小段上传（每段 base64 ≤ 64000 字符），3 段并行
+  async function uploadImage(z) {
+    const up = [...crypto.getRandomValues(new Uint8Array(12))].map(x => x.toString(16).padStart(2, '0')).join('');
+    const split = s => { const a = []; for (let i = 0; i < s.length; i += 64000) a.push(s.slice(i, i + 64000)); return a; };
+    const jobs = [...split(z.data).map((data, index) => ({ kind: 'f', index, data })), ...split(z.thumb).map((data, index) => ({ kind: 't', index, data }))];
+    const nf = jobs.filter(j => j.kind === 'f').length, nt = jobs.length - nf;
+    let k = 0;
+    const worker = async () => {
+      while (k < jobs.length) {
+        const j = jobs[k++];
+        for (let tries = 0; ; tries++) {
+          try { await api('upPart', { uploadId: up, ...j }, { silent: tries < 2 }); break; } catch (e) { if (tries >= 2 || e.data) throw e; }
+        }
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    return api('upDone', { uploadId: up, nf, nt });
   }
   // 图片选择器：items = [{ id, url, busy }]
   function picker(host, max, onChange) {
@@ -211,11 +231,11 @@
         items.push(it); render();
         try {
           const z = await compress(f);
-          const r = await api('upload', z);
+          const r = await uploadImage(z);
           it.id = r.id; it.busy = false;
         } catch (e) {
           items.splice(items.indexOf(it), 1);
-          if (!e.data) toast(e.message || '图片上传失败');
+          toast(e.message && e.message !== 'Failed to fetch' ? e.message : '图片上传失败，请检查网络后重试', 2600);
         }
         render();
       }
