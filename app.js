@@ -233,6 +233,7 @@
 
   // ---------------- 页面框架 ----------------
   function frame({ title, back, nav, right }) {
+    $('#top').hidden = false;
     $('#back').hidden = !back;
     $('#brand').hidden = !!title;
     $('#ttl').hidden = !title; $('#ttl').textContent = title || '';
@@ -282,7 +283,7 @@
   function afterLogin(r) {
     token = r.token; localStorage.setItem('pf_token', token);
     me = r.me; meAt = 0;
-    location.hash = me.mustChange ? '#/me/pw' : '#/';
+    location.hash = me.mustChange ? '#/me/pw' : me.welcomed ? '#/' : '#/welcome';
   }
 
   function regForm(extra = '') {
@@ -306,8 +307,8 @@
     view.innerHTML = `<form class="form" id="f">
       <p class="lead">排友圈仅限信息科大教职工排协会员使用。提交后由管理员人工审核，通过后用工号和密码登录。</p>
       ${regForm()}
-      <div class="privacy">${PRIVACY}</div>
-      <button class="btn o">我已阅读上述说明，提交申请</button>
+      <div class="privacy">${PRIVACY}<p>5. 使用排友圈请遵守 <a href="#/rules">排友圈公约</a>：文明友善、就事论事。</p></div>
+      <button class="btn o">我已阅读上述说明和公约，提交申请</button>
       <p class="alt">已有账号？<a href="#/login">去登录</a></p></form>`;
     bindEyes(view);
     $('#f').onsubmit = async e => {
@@ -340,14 +341,16 @@
     const key = 'b:' + board;
     const chips = `<div class="chips"><span class="chip ${board ? '' : 'on'}" data-b="">全部</span>${cfg.boards.map(b => `<span class="chip ${board === b.id ? 'on' : ''}" data-b="${esc(b.id)}">${esc(b.short)}</span>`).join('')}</div>`;
     const bd = boardOf(board);
-    view.innerHTML = chips + (bd ? `<div class="bdesc"><b>${esc(bd.name)}</b>　${esc(bd.desc || '')}</div>` : '') + '<div id="list"><div class="loading">加载中…</div></div>';
+    view.innerHTML = chips + (bd ? `<div class="bdesc"><b>${esc(bd.name)}</b>　${esc(bd.desc || '')}</div>` : '')
+      + '<a class="rulebar" href="#/rules"><span class="ri">🤝</span><span class="rt">文明交流 · 友善互助 · 就事论事</span><span class="rl">排友圈公约 ›</span></a>'
+      + '<div id="list"><div class="loading">加载中…</div></div>';
     $$('.chip', view).forEach(c => c.onclick = () => {
       if (c.dataset.b === board) { delete listCache[key]; route(); return; }
       location.hash = c.dataset.b ? `#/?b=${c.dataset.b}` : '#/';
     });
     const canPost = !bd || !bd.adminOnly || isAdmin();
     if (canPost) document.body.insertAdjacentHTML('beforeend', `<a class="fab" href="#/new${board ? '?b=' + esc(board) : ''}">＋</a>`);
-    loadMe().catch(() => {});
+    loadMe().then(m => { if (m && !m.welcomed && !m.mustChange && /^#?\/?(\?.*)?$/.test(location.hash)) location.replace('#/welcome'); }).catch(() => {});
     curKey = key;
     const c = listCache[key];
     if (c && Date.now() - c.at < 90e3) { renderList(c); window.scrollTo(0, c.y || 0); }
@@ -633,6 +636,8 @@
         <a class="li" href="#/me/pw">🔑 修改密码<span class="r">›</span></a></div>
       <div class="list">
         <a class="li" href="#/a2hs">📱 添加到手机桌面<span class="r">›</span></a>
+        <a class="li" href="#/rules">📜 排友圈公约<span class="r">›</span></a>
+        <a class="li" href="#/welcome">👋 再看一遍欢迎页<span class="r">›</span></a>
         <a class="li" href="#/privacy">📄 个人信息说明<span class="r">›</span></a>
         <a class="li" href="../">🏠 返回协会官网<span class="r">›</span></a></div>
       <div class="list">
@@ -674,7 +679,7 @@
       e.preventDefault();
       const r = await api('password', Object.fromEntries(new FormData(e.target)));
       token = r.token; localStorage.setItem('pf_token', token); me = r.me; meAt = 0;
-      toast('密码已修改'); location.hash = '#/me';
+      toast('密码已修改'); location.hash = me.welcomed ? '#/me' : '#/welcome';
     };
   }
 
@@ -700,6 +705,44 @@
       <h3>安卓手机（自带浏览器 / Chrome / Edge）</h3><ol><li>点浏览器菜单（⋮ 或 ≡）</li><li>选「添加到主屏幕」或「添加到桌面」「安装应用」</li></ol>
       <p>添加后桌面上会出现排协图标「排友圈」。登录一次 90 天内不用再登录。</p></div>`
       : `<div class="doc">${PRIVACY}</div>`;
+  }
+
+  // ---------------- 公约 / 欢迎页 ----------------
+  function rulesHtml(text) {
+    const lines = String(text || '').split('\n').map(x => x.trim()).filter(Boolean);
+    return `<ol class="rules">${lines.map(l => {
+      const t = l.replace(/^\d+[.、．)]\s*/, '');
+      const k = t.indexOf('。');
+      return `<li>${k > 0 && k < t.length - 1 ? `<b>${esc(t.slice(0, k + 1))}</b>${esc(t.slice(k + 1))}` : esc(t)}</li>`;
+    }).join('')}</ol>`;
+  }
+  async function pageRules() {
+    frame({ title: '排友圈公约', back: true });
+    await loadConfig();
+    view.innerHTML = `<div class="doc"><div class="rules-hd"><img src="img/logo.png" alt=""><div><h2>排友圈公约</h2><p>以球会友，文明交流</p></div></div>${rulesHtml(cfg.rules)}
+      <p class="rules-ft">排友圈是信息科大教职工排协会员的交流区。愿每一次约球都有人应，每一个问题都有人答。🏐</p></div>`;
+  }
+  const BOARD_ICON = { notice: '📢', yueqiu: '🏐', tech: '🎯', match: '🏆', chat: '☕' };
+  async function pageWelcome() {
+    frame({});
+    $('#top').hidden = true;
+    await loadConfig(); await loadMe(true);
+    const first = !me.welcomed;
+    view.innerHTML = `<div class="wel">
+      <div class="wel-hero"><div class="wel-ball"></div><img class="wel-logo" src="img/logo.png" alt="">
+        <h1>欢迎来到排友圈</h1><p class="wel-hi">${esc(me.nick)}，很高兴见到你！</p><p class="wel-sub">信息科大教职工排协会员交流区</p></div>
+      <div class="wel-sec"><h2>在这里，你可以</h2><div class="wel-boards">${cfg.boards.map(b => `<div class="wb"><span class="wi">${BOARD_ICON[b.id] || '💬'}</span><b>${esc(b.name)}</b><small>${esc(b.desc || '')}</small></div>`).join('')}</div></div>
+      <div class="wel-sec"><h2>排友圈公约</h2>${rulesHtml(cfg.rules)}</div>
+      <div class="wel-sec wel-go">
+        ${first ? '<label class="agree"><input type="checkbox" id="ag"> 我已阅读，愿意遵守排友圈公约</label>' : ''}
+        <button class="btn o" id="go" ${first ? 'disabled' : ''}>进入排友圈 →</button>
+        <p class="wel-tip">小提示：可以把排友圈 <a href="#/a2hs">添加到手机桌面</a>，以后一点就开。</p></div></div>`;
+    const ag = $('#ag'), go = $('#go');
+    if (ag) ag.onchange = () => { go.disabled = !ag.checked; };
+    go.onclick = async () => {
+      go.disabled = true;
+      try { if (first) { await api('welcome'); me.welcomed = true; } location.replace('#/'); } catch (e) { go.disabled = false; }
+    };
   }
 
   // ---------------- 管理后台 ----------------
@@ -783,6 +826,7 @@
         <span class="mv"><button class="mini" data-up>↑</button><button class="mini" data-dn>↓</button><button class="mini r" data-rm>删</button></span></div></div>`).join('')}
         <div class="acard"><button class="mini" id="add">＋ 新增板块</button></div>
         <div class="sec">学院 / 部门（每行一个，注册时下拉选择）</div><div class="acard"><textarea class="big" id="cols">${esc(s.colleges.join('\n'))}</textarea></div>
+        <div class="sec">排友圈公约（每行一条，首页和欢迎页会显示；每条第一个句号前的部分会加粗）</div><div class="acard"><textarea class="big" id="rules">${esc(s.rules || '')}</textarea></div>
         <div class="sec">敏感词（每行一个，发帖、回复、昵称中出现会被拦截）</div><div class="acard"><textarea class="big" id="words">${esc(s.words.join('\n'))}</textarea></div>
         <div class="form"><button class="btn" id="save">保存设置</button></div>`;
       $$('[data-i]', ab).forEach(c => {
@@ -794,8 +838,8 @@
       });
       $('#add').onclick = () => { boards.push({ id: '', name: '', short: '', color: 'b', desc: '' }); render(); };
       $('#save').onclick = async () => {
-        const r = await api('admin.saveSettings', { boards, colleges: $('#cols').value.split('\n'), words: $('#words').value.split('\n') });
-        s.colleges = r.colleges; s.words = r.words; boards = r.boards.map(b => ({ ...b }));
+        const r = await api('admin.saveSettings', { boards, colleges: $('#cols').value.split('\n'), words: $('#words').value.split('\n'), rules: $('#rules').value });
+        s.colleges = r.colleges; s.words = r.words; s.rules = r.rules; boards = r.boards.map(b => ({ ...b }));
         cfg = null; localStorage.removeItem('pf_cfg'); await loadConfig(); invalidate();
         toast('已保存'); render();
       };
@@ -808,7 +852,7 @@
   }
 
   // ---------------- 路由 ----------------
-  const PUBLIC = new Set(['login', 'register', 'setup', 'privacy', 'a2hs']);
+  const PUBLIC = new Set(['login', 'register', 'setup', 'privacy', 'a2hs', 'rules']);
   async function route() {
     const h = (location.hash || '#/').slice(1);
     const [pathPart, qs] = h.split('?');
@@ -838,6 +882,8 @@
       if (head === 'register') return await pageRegister();
       if (head === 'setup') return await pageSetup();
       if (head === 'privacy' || head === 'a2hs') return pageDoc(head);
+      if (head === 'rules') return await pageRules();
+      if (head === 'welcome') return await pageWelcome();
       location.replace('#/');
     } catch (e) {
       if (!view.querySelector('.form, .post, .card, .acard, .msg, .prof')) view.innerHTML = `<div class="empty"><b>📶</b>${esc(e.message || '加载失败')}<br><br><button class="more-btn" id="retry">重试</button></div>`;

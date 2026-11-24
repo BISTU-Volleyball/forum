@@ -219,3 +219,42 @@ textarea.big { width: 100%; min-height: 200px; border: 1px solid #c4d3e4; border
 #sheet .dlg .bs { display: flex; gap: 10px; } #sheet .dlg .bs .btn { margin: 0; }
 #lightbox { position: fixed; inset: 0; z-index: 70; background: #000; display: flex; align-items: center; justify-content: center; }
 #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* 公约条 */
+.rulebar { display: flex; align-items: center; gap: 8px; margin: 8px 8px 0; padding: 8px 12px; border-radius: 9px; background: linear-gradient(90deg, #fff6ec, #fff); border: 1px solid #f6cf9f; color: #111; font-size: 13.5px; }
+.rulebar .ri { font-size: 17px; }
+.rulebar .rt { flex: 1; font-weight: 700; color: #7a3c00; }
+.rulebar .rl { color: var(--blue); font-size: 13px; white-space: nowrap; }
+
+/* 公约 */
+.rules { padding-left: 0; margin: 6px 0; list-style: none; counter-reset: r; }
+.rules li { counter-increment: r; position: relative; padding: 9px 0 9px 36px; border-bottom: 1px dashed #e0e6ee; font-size: 15px; line-height: 1.65; }
+.rules li:last-child { border-bottom: 0; }
+.rules li::before { content: counter(r); position: absolute; left: 0; top: 10px; width: 24px; height: 24px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 13px; font-weight: 700; text-align: center; line-height: 24px; }
+.rules li b { color: var(--deep); }
+.rules-hd { display: flex; align-items: center; gap: 12px; padding: 4px 0 10px; border-bottom: 2px solid var(--orange); margin-bottom: 4px; }
+.rules-hd img { width: 48px; height: 48px; }
+.rules-hd h2 { margin: 0; } .rules-hd p { margin: 0; font-size: 13.5px; }
+.rules-ft { margin-top: 14px; font-size: 14px; text-align: center; }
+
+/* 欢迎页 */
+.wel { padding-bottom: 30px; }
+.wel-hero { position: relative; overflow: hidden; text-align: center; color: #fff; padding: calc(40px + env(safe-area-inset-top)) 20px 34px;
+  background: radial-gradient(circle at 80% 10%, rgba(239,126,0,.55), transparent 45%), linear-gradient(160deg, #0a63c2 0%, #0054A6 45%, #003a73 100%); }
+.wel-ball { position: absolute; right: -60px; bottom: -70px; width: 240px; height: 240px; background: url(img/ball-line.svg) center / contain no-repeat; opacity: .22; }
+.wel-hero::before { content: ""; position: absolute; left: -50px; top: -40px; width: 160px; height: 160px; background: url(img/ball-line.svg) center / contain no-repeat; opacity: .12; }
+.wel-logo { position: relative; width: 96px; height: 96px; filter: drop-shadow(0 6px 14px rgba(0,0,0,.3)); animation: wbounce 2.4s ease-in-out infinite; }
+@keyframes wbounce { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-10px) rotate(8deg); } }
+.wel-hero h1 { position: relative; font-size: 27px; margin: 14px 0 4px; letter-spacing: 2px; }
+.wel-hi { position: relative; font-size: 17px; margin: 0; font-weight: 700; color: #ffe2bd; }
+.wel-sub { position: relative; font-size: 14px; margin: 6px 0 0; }
+.wel-sec { background: #fff; margin: 12px 10px 0; border-radius: 12px; padding: 12px 14px; box-shadow: 0 2px 8px rgba(0,40,90,.06); }
+.wel-sec h2 { font-size: 16px; margin: 0 0 8px; padding-left: 9px; border-left: 4px solid var(--orange); }
+.wel-boards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wb { background: var(--soft); border-radius: 9px; padding: 9px 10px; display: flex; flex-direction: column; }
+.wb .wi { font-size: 22px; line-height: 1.2; }
+.wb b { font-size: 14.5px; margin-top: 2px; } .wb small { font-size: 12.5px; line-height: 1.45; }
+.wel-go { text-align: center; }
+.agree { display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 15px; margin: 4px 0 12px; }
+.agree input { width: 19px; height: 19px; }
+.wel-tip { font-size: 13.5px; margin: 12px 0 2px; }
