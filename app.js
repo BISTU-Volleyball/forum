@@ -92,7 +92,7 @@
     ? `<img class="av ${cls}" data-id="${esc(a.av)}" data-k="thumb" src="${esc(a.avUrl)}" alt="">`
     : `<span class="av ${cls}" data-c="${esc(a.color || '#888')}">${esc((a.nick || '?').slice(0, 1))}</span>`;
   const ulink = (a, inner) => a.gone || !a.uid ? inner : `<span class="ulink" data-u="${esc(a.uid)}">${inner}</span>`;
-  const who = a => `${ulink(a, `${avatar(a)}<span class="nk">${esc(a.nick)}</span>`)}${a.role ? `<span class="badge">${a.role === 'super' ? '超管' : '管理员'}</span>` : ''}${a.college ? `<span class="col">${esc(a.college)}</span>` : ''}`;
+  const who = a => `${ulink(a, `${avatar(a)}<span class="nk">${esc(a.nick)}</span>`)}${a.guest ? '<span class="badge gst">亲友</span>' : ''}${a.role ? `<span class="badge">${a.role === 'super' ? '超管' : '管理员'}</span>` : ''}${a.college ? `<span class="col">${esc(a.college)}</span>` : ''}`;
   const btag = id => { const b = boardOf(id); return b ? `<span class="tag ${esc(b.color)}">${esc(b.short)}</span>` : ''; };
   function paint(root = view) {
     $$('[data-c]', root).forEach(el => { el.style.background = el.dataset.c; });
@@ -402,11 +402,12 @@
     await loadConfig().catch(() => {});
     view.innerHTML = `<form class="form" id="f">
       <h2>登录排友圈</h2><p class="lead">信息科大教职工排协会员交流区</p>
-      <label class="fld"><span>工号</span><input name="workNo" autocomplete="username" inputmode="text" required></label>
+      <label class="fld"><span>工号（亲友填登录名）</span><input name="workNo" autocomplete="username" inputmode="text" required></label>
       <label class="fld"><span>密码</span>${pwField('password', '')}</label>
       <button class="btn">登录</button>
       <div id="msg"></div>
-      <p class="alt">还没有账号？<a href="#/register">申请注册</a></p>
+      <p class="alt">还没有账号？<a href="#/register">会员申请注册</a></p>
+      <p class="alt">教职工亲友？请向会员要邀请链接，<a href="#/join">亲友申请</a></p>
       <p class="alt">忘记密码请联系管理员重置</p>
       ${cfg && cfg.needSetup ? '<p class="alt"><a href="#/setup">首次使用：创建超级管理员</a></p>' : ''}
     </form>`;
@@ -445,7 +446,8 @@
     <p>2. 谁能看到：姓名和工号只有你自己和论坛管理员能看到；其他会员只看到你的昵称、头像颜色，以及学院（可在"我的"里关闭）。</p>
     <p>3. 存放：腾讯云 CloudBase（上海），密码只存加密后的摘要，任何人都看不到原密码。</p>
     <p>4. 私信：只有对话双方能看到；被举报的那一条私信管理员可以看到，用于处理骚扰。</p>
-    <p>5. 注销：可随时在"我的 → 注销账号"自助注销，注销后删除姓名、工号、学院和密码，已发内容的作者显示为"已注销用户"。</p>`;
+    <p>5. 亲友账号：教职工亲友凭会员邀请注册，填写真实姓名和与邀请人的关系，这些信息只有管理员和邀请人能看到；仅限年满 18 周岁。</p>
+    <p>6. 注销：可随时在"我的 → 注销账号"自助注销，注销后删除姓名、工号、学院和密码，已发内容的作者显示为"已注销用户"。</p>`;
 
   async function pageRegister() {
     frame({ title: '申请注册', back: true });
@@ -453,7 +455,7 @@
     view.innerHTML = `<form class="form" id="f">
       <p class="lead">排友圈仅限信息科大教职工排协会员使用。提交后由管理员人工审核，通过后用工号和密码登录。</p>
       ${regForm()}
-      <div class="privacy">${PRIVACY}<p>6. 使用排友圈请遵守 <a href="#/rules">排友圈公约</a>：文明友善、就事论事。</p></div>
+      <div class="privacy">${PRIVACY}<p>7. 使用排友圈请遵守 <a href="#/rules">排友圈公约</a>：文明友善、就事论事。</p></div>
       <button class="btn o">我已阅读上述说明和公约，提交申请</button>
       <p class="alt">已有账号？<a href="#/login">去登录</a></p></form>`;
     bindEyes(view);
@@ -465,6 +467,66 @@
         view.innerHTML = `<div class="form"><div class="empty"><b>✅</b>申请已提交</div><div class="hint">管理员审核通过后，就可以用<b>工号和密码</b>登录了。审核期间登录会提示"审核中"。</div><a class="btn" href="#/login">返回登录</a></div>`;
       } catch (err) { /* 已提示 */ } finally { btn.disabled = false; }
     };
+  }
+
+  async function pageJoin(q) {
+    frame({ title: '亲友申请', back: true });
+    const code = (q.get('c') || '').toUpperCase();
+    let sp = null;
+    if (code) { try { sp = (await api('inviteInfo', { code }, { silent: true })).sponsor; } catch (e) { /* 下面提示 */ } }
+    view.innerHTML = `<form class="form" id="f">
+      <p class="lead">欢迎教职工的家人和朋友加入排友圈！亲友账号需要一位会员邀请担保，提交后由管理员审核。</p>
+      ${sp ? `<div class="hint">邀请人：<b>${esc(sp.nick)}</b></div><br>` : code ? '<div class="hint warn">这个邀请码无效或已失效，请向邀请你的会员重新索取。</div><br>' : ''}
+      <label class="fld"><span>邀请码</span><input name="code" value="${esc(code)}" required placeholder="8 位，向会员索取"></label>
+      <label class="fld"><span>真实姓名</span><input name="name" autocomplete="name" required><small>只有管理员和邀请你的会员能看到</small></label>
+      <label class="fld"><span>和邀请人的关系</span><select name="relation" required><option value="">请选择</option><option>家属</option><option>朋友</option><option>其他</option></select></label>
+      <label class="fld"><span>昵称</span><input name="nick" maxlength="12" required><small>2～12 个字，大家看到的是昵称</small></label>
+      <label class="fld"><span>登录名</span><input name="loginName" maxlength="20" autocomplete="username" required><small>以后用它登录：4～20 位，字母开头，只能用字母和数字</small></label>
+      <label class="fld"><span>密码</span>${pwField('password', '至少 6 位')}</label>
+      <label class="fld"><span>备注（选填）</span><input name="note" maxlength="100" placeholder="例如：经常一起打球"></label>
+      <label class="fld chk"><input type="checkbox" name="adult" value="1" required> 我已年满 18 周岁</label>
+      <div class="privacy">${PRIVACY}</div>
+      <button class="btn o">我已阅读上述说明和公约，提交申请</button></form>`;
+    bindEyes(view);
+    $('#f').onsubmit = async e => {
+      e.preventDefault();
+      const fd = Object.fromEntries(new FormData(e.target));
+      if (!fd.adult) return toast('亲友账号仅限年满 18 周岁的成年人');
+      const btn = $('button.btn', e.target); btn.disabled = true;
+      try {
+        await api('registerGuest', { ...fd, adult: true });
+        view.innerHTML = `<div class="form"><div class="empty"><b>✅</b>申请已提交</div><div class="hint">管理员审核通过后，就可以用<b>登录名和密码</b>登录了。</div><a class="btn" href="#/login">返回登录</a></div>`;
+      } catch (err) { /* 已提示 */ } finally { btn.disabled = false; }
+    };
+  }
+
+  async function pageGuests() {
+    frame({ title: '邀请亲友', back: true });
+    view.innerHTML = '<div class="loading">加载中…</div>';
+    const load = async (reset) => {
+      const r = await api('invite', { reset });
+      const link = location.href.split('#')[0] + '#/join?c=' + r.code;
+      const st = { pending: '审核中', active: '已加入', suspended: '已暂停', banned: '已停用' };
+      view.innerHTML = `<div class="doc"><h2>邀请亲友（已担保 ${r.used}/${r.max} 人）</h2>
+        <p>把下面的邀请链接发给你的家人或朋友（需年满 18 周岁），对方填写申请、管理员审核后即可加入。你是 TA 的担保人，TA 的内容被管理员处理时你会收到通知。</p>
+        <div class="invbox"><div class="ic">邀请码：<b>${esc(r.code)}</b></div><div class="il">${esc(link)}</div>
+        <div class="avops"><button class="mini f" id="cp">📋 复制邀请链接</button><button class="mini" id="rs">换一个邀请码</button></div></div>
+        ${r.used >= r.max ? '<div class="hint warn">已担保满 3 人，暂时不能再邀请。</div>' : ''}
+        <h3>我担保的亲友</h3>
+        ${r.guests.length ? r.guests.map(g => `<div class="acard gcard" data-uid="${esc(g.uid)}"><div class="h">${avatar(g)} ${esc(g.nick)}<span class="w">${esc(g.name)} · ${esc(g.relation)} · ${st[g.status] || g.status}</span></div>
+          ${['pending', 'active'].includes(g.status) ? `<div class="ops"><a class="mini" href="#/user/${esc(g.uid)}">主页</a><button class="mini r" data-un>${g.status === 'pending' ? '撤回邀请' : '解除担保'}</button></div>`
+            : g.status === 'suspended' ? '<div class="ops"><button class="mini f" data-re>恢复担保</button></div>' : ''}</div>`).join('') : '<p>还没有邀请亲友。</p>'}</div>`;
+      paint();
+      $('#cp').onclick = () => { const t = `邀请你加入排友圈（信息科大教职工排协交流区），打开链接填写申请：${link}`; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('已复制，可以发给亲友')).catch(() => dialog({ title: '邀请链接', textarea: true, value: t, ok: '关闭' })); };
+      $('#rs').onclick = async () => { if (await dialog({ title: '换一个邀请码？', text: '旧的邀请链接会失效，已加入的亲友不受影响。' })) load(true); };
+      $$('[data-re]').forEach(b => b.onclick = async () => { await api('responsor', { uid: b.closest('.acard').dataset.uid }); toast('已恢复'); load(); });
+      $$('[data-un]').forEach(b => b.onclick = async () => {
+        const c = b.closest('.acard'), g = r.guests.find(x => x.uid === c.dataset.uid);
+        if (!await dialog({ title: g.status === 'pending' ? `撤回对「${g.nick}」的邀请？` : `解除对「${g.nick}」的担保？`, text: g.status === 'pending' ? '' : '解除后 TA 的账号会暂停，不能登录，直到有其他会员担保。', danger: true, ok: '确定' })) return;
+        await api('unsponsor', { uid: g.uid }); toast('已处理'); load();
+      });
+    };
+    await load();
   }
 
   async function pageSetup() {
@@ -583,7 +645,7 @@
         : r.hiddenForMe ? '<div class="gone">该楼被多位会员举报，等待管理员处理</div>'
         : `${r.quote ? `<div class="quote">回复 ${r.quote.floor}楼 ${esc(r.quote.nick)}：${esc(r.quote.text)}</div>` : ''}${r.body ? `<div class="body">${rich(r.body, r.mentions)}</div>` : ''}${imgGrid(r.images)}`;
       return `<div class="floor" id="f${r.floor}" data-id="${esc(r.id)}">${ulink(r.author, avatar(r.author, 'm'))}<div class="main">
-        <div class="hd">${ulink(r.author, `<span class="nk">${esc(r.author.nick)}</span>`)}${r.author.role ? `<span class="badge">${r.author.role === 'super' ? '超管' : '管理员'}</span>` : ''}${r.author.college ? `<span class="col">${esc(r.author.college)}</span>` : ''}<span>· ${rel(r.at)}${r.editedAt ? ' · 已编辑' : ''}</span><span class="fl">${r.floor}楼</span></div>
+        <div class="hd">${ulink(r.author, `<span class="nk">${esc(r.author.nick)}</span>`)}${r.author.guest ? '<span class="badge gst">亲友</span>' : ''}${r.author.role ? `<span class="badge">${r.author.role === 'super' ? '超管' : '管理员'}</span>` : ''}${r.author.college ? `<span class="col">${esc(r.author.college)}</span>` : ''}<span>· ${rel(r.at)}${r.editedAt ? ' · 已编辑' : ''}</span><span class="fl">${r.floor}楼</span></div>
         ${main}${r.hidden && !r.hiddenForMe ? '<div class="hint warn">该楼被多人举报，暂时对其他人隐藏</div>' : ''}
         ${r.deleted || r.hiddenForMe ? '' : `<div class="ops"><a data-q>回复</a><a data-l class="${r.liked ? 'on' : ''}">👍 ${r.likes || '赞'}</a><a data-m>⋯</a></div>`}</div></div>`;
     }
@@ -849,10 +911,12 @@
     const render = (qv = '') => {
       const k = qv.trim();
       const rows = k ? list.filter(u => u.nick.includes(k) || (u.college || '').includes(k)) : list;
-      $('#mlist').innerHTML = rows.length ? rows.map(u => `<a class="mem" href="#/user/${esc(u.uid)}">${avatar(u, 'm')}<div class="mi"><b>${esc(u.nick)}</b>${u.role ? `<span class="badge">${u.role === 'super' ? '超管' : '管理员'}</span>` : ''}<small>${esc(u.college || ' ')}</small></div></a>`).join('') : '<div class="empty">没有找到</div>';
+      const cardOf = u => `<a class="mem" href="#/user/${esc(u.uid)}">${avatar(u, 'm')}<div class="mi"><b>${esc(u.nick)}</b>${u.role ? `<span class="badge">${u.role === 'super' ? '超管' : '管理员'}</span>` : ''}${u.guest ? '<span class="badge gst">亲友</span>' : ''}<small>${esc(u.college || ' ')}</small></div></a>`;
+      const ms = rows.filter(u => !u.guest), gs = rows.filter(u => u.guest);
+      $('#mlist').innerHTML = rows.length ? `<div class="sec">会员 ${ms.length} 人</div><div class="mems">${ms.map(cardOf).join('')}</div>${gs.length ? `<div class="sec">亲友 ${gs.length} 人</div><div class="mems">${gs.map(cardOf).join('')}</div>` : ''}` : '<div class="empty">没有找到</div>';
       paint($('#mlist'));
     };
-    view.innerHTML = `<div class="search"><input id="mq" placeholder="搜昵称 / 学院"></div><div class="sec">共 ${list.length} 位会员</div><div class="mems" id="mlist"></div>`;
+    view.innerHTML = `<div class="search"><input id="mq" placeholder="搜昵称 / 学院"></div><div id="mlist"></div>`;
     $('#mq').oninput = e => render(e.target.value);
     render();
   }
@@ -863,6 +927,7 @@
     await loadMe().catch(() => {});
     const { user: u } = await api('user', { uid });
     view.innerHTML = `<div class="prof">${avatar(u, 'l')}<div><div class="n">${esc(u.nick)}${u.role ? ` <span class="badge">${u.role === 'super' ? '超管' : '管理员'}</span>` : ''}</div>
+        ${u.guest ? `<div class="s"><span class="badge gst">亲友</span> 由 ${u.sponsor ? `<span class="ulink at" data-u="${esc(u.sponsor.uid)}">${esc(u.sponsor.nick)}</span>` : '会员'} 邀请${u.relation ? '（' + esc(u.relation) + '）' : ''}</div>` : ''}
         <div class="s">${u.college ? esc(u.college) + ' · ' : ''}${u.at ? `${new Date(u.at).getFullYear()}年${new Date(u.at).getMonth() + 1}月加入` : ''}</div>
         <div class="s">发帖 ${u.posts || 0} · 回复 ${u.replies || 0}</div></div></div>
       ${u.me ? '' : !u.active ? '<div class="hint">该账号已注销或停用</div>' : u.allowDm || isAdmin() ? `<div class="form"><a class="btn" href="#/dm/${esc(u.uid)}">✉️ 发私信</a></div>` : '<div class="hint">对方设置了不接收私信</div>'}
@@ -941,7 +1006,8 @@
     frame({ nav: 'me', title: '我的' });
     await loadMe(true);
     const a = isAdmin();
-    view.innerHTML = `<div class="prof">${avatar(me, 'l')}<div><div class="n">${esc(me.nick)}</div><div class="s">${esc(me.college)}${me.showCollege ? '' : '（不对外显示）'} · ${esc(me.name)} · 工号 ${esc(me.workNo)}</div>
+    const gst = me.kind === 'guest';
+    view.innerHTML = `<div class="prof">${avatar(me, 'l')}<div><div class="n">${esc(me.nick)}${gst ? ' <span class="badge gst">亲友</span>' : ''}</div><div class="s">${gst ? `${esc(me.name)} · 登录名 ${esc(me.workNo)}` : `${esc(me.college)}${me.showCollege ? '' : '（不对外显示）'} · ${esc(me.name)} · 工号 ${esc(me.workNo)}`}</div>
       <div class="s">${me.role === 'super' ? '超级管理员 · ' : me.role === 'admin' ? '管理员 · ' : ''}${new Date(me.at).getFullYear()}年${new Date(me.at).getMonth() + 1}月加入</div></div></div>
       ${me.muteUntil > Date.now() ? `<div class="hint warn">你已被禁言，${esc(new Date(me.muteUntil).toLocaleString())} 后恢复</div>` : ''}
       ${a ? `<div class="list"><a class="li" href="#/admin/pending">🛠️ 管理后台<span class="r">${me.pending ? `<span class="cnt">审核 ${me.pending}</span> ` : ''}${me.reports ? `<span class="cnt">举报 ${me.reports}</span>` : ''}${backupDue() ? ' <span class="cnt">该备份了</span>' : ''} ›</span></a></div>` : ''}
@@ -950,10 +1016,11 @@
         <a class="li" href="#/msg?t=dm">✉️ 私信<span class="r">${me.dmUnread ? `<span class="cnt">${me.dmUnread}</span>` : ''} ›</span></a>
         <a class="li" href="#/user/${esc(me.uid)}">🪪 我的主页<span class="r">›</span></a>
         <a class="li" href="#/me/posts">📝 我的帖子<span class="r">›</span></a>
-        <a class="li" href="#/me/joins">🏐 我报名的约球<span class="r">›</span></a></div>
+        <a class="li" href="#/me/joins">🏐 我报名的约球<span class="r">›</span></a>
+        ${gst ? '' : '<a class="li" href="#/me/guests">👨‍👩‍👧 邀请亲友<span class="r">›</span></a>'}</div>
       <div class="list">
         <a class="li" href="#/me/profile">✏️ 修改昵称 / 头像<span class="r">›</span></a>
-        <div class="li" id="sc">🏫 在昵称旁显示学院<span class="sw ${me.showCollege ? 'on' : ''}"></span></div>
+        ${gst ? '<div id="sc" hidden></div>' : `<div class="li" id="sc">🏫 在昵称旁显示学院<span class="sw ${me.showCollege ? 'on' : ''}"></span></div>`}
         <div class="li" id="sd">✉️ 接收私信<span class="sw ${me.allowDm ? 'on' : ''}"></span></div>
         <a class="li" href="#/me/pw">🔑 修改密码<span class="r">›</span></a></div>
       <div class="list">
@@ -1105,7 +1172,8 @@
   const tm = t => new Date(t).toLocaleString('zh-CN', { hour12: false });
   async function adminPending(ab) {
     const { list } = await api('admin.pending');
-    ab.innerHTML = list.length ? list.map(u => `<div class="acard" data-uid="${esc(u.uid)}"><div class="h">${esc(u.name)}<span class="w">工号 ${esc(u.workNo)}　${esc(u.college)}</span></div>
+    ab.innerHTML = list.length ? list.map(u => `<div class="acard" data-uid="${esc(u.uid)}"><div class="h">${u.guest ? '<span class="badge gst">亲友申请</span> ' : ''}${esc(u.name)}<span class="w">${u.guest ? `登录名 ${esc(u.workNo)}` : `工号 ${esc(u.workNo)}　${esc(u.college)}`}</span></div>
+      ${u.guest ? `<div class="d">邀请人：<b>${esc(u.sponsor ? u.sponsor.nick : '?')}</b>${u.sponsor && u.sponsor.name ? '（' + esc(u.sponsor.name) + '）' : ''} · 关系：${esc(u.relation || '')}</div>` : ''}
       <div class="d">昵称：${esc(u.nick)}</div><div class="d">备注：${esc(u.note || '（无）')}</div><div class="d">申请时间：${esc(tm(u.at))}</div>
       <div class="ops"><button class="mini f" data-ok>通过</button><button class="mini r" data-no>拒绝</button></div></div>`).join('') : '<div class="empty"><b>✅</b>没有待审核的申请</div>';
     $$('.acard', ab).forEach(c => {
@@ -1132,12 +1200,12 @@
   async function adminUsers(ab, qv = '') {
     const { list } = await api('admin.users', { q: qv });
     ab.innerHTML = `<div class="search"><input id="q" placeholder="搜姓名 / 昵称 / 工号 / 学院" value="${esc(qv)}"><button class="mini f" id="go">搜索</button></div>
-      <div class="sec">共 ${list.length} 人</div>` + list.map(u => `<div class="acard" data-uid="${esc(u.uid)}"><div class="h">${avatar(u)} ${esc(u.nick)}<span class="w">${esc(u.name)}　工号 ${esc(u.workNo)}　${esc(u.college)}</span></div>
-      <div class="d">${u.role === 'super' ? '超级管理员' : u.role === 'admin' ? '管理员' : '会员'}${u.status === 'banned' ? ' · <b>已停用</b>' : ''}${u.muteUntil > Date.now() ? ` · 禁言至 ${esc(tm(u.muteUntil))}` : ''} · ${esc(tm(u.at).slice(0, 10))} 注册</div>
+      <div class="sec">共 ${list.length} 人</div>` + list.map(u => `<div class="acard" data-uid="${esc(u.uid)}"><div class="h">${avatar(u)} ${esc(u.nick)}${u.guest ? ' <span class="badge gst">亲友</span>' : ''}<span class="w">${esc(u.name)}　${u.guest ? `登录名 ${esc(u.workNo)}　${esc(u.relation || '')} · 邀请人 ${esc(u.sponsor ? u.sponsor.nick : '?')}` : `工号 ${esc(u.workNo)}　${esc(u.college)}`}</span></div>
+      <div class="d">${u.role === 'super' ? '超级管理员' : u.role === 'admin' ? '管理员' : '会员'}${u.status === 'banned' ? ' · <b>已停用</b>' : ''}${u.status === 'suspended' ? ` · <b>已暂停</b>（${esc(u.suspendReason || '')}）` : ''}${u.muteUntil > Date.now() ? ` · 禁言至 ${esc(tm(u.muteUntil))}` : ''} · ${esc(tm(u.at).slice(0, 10))} 注册</div>
       ${u.role === 'super' || u.uid === me.uid ? '' : `<div class="ops">
         ${me.role === 'super' ? `<button class="mini o" data-role>${u.role === 'admin' ? '撤销管理员' : '设为管理员'}</button>` : ''}
         ${u.role === 'admin' && me.role !== 'super' ? '' : `${u.muteUntil > Date.now() ? '<button class="mini" data-unmute>解除禁言</button>' : '<button class="mini" data-mute>禁言</button>'}
-        <button class="mini" data-reset>重置密码</button>${u.av ? '<button class="mini" data-clav>清除头像</button>' : ''}<button class="mini r" data-ban>${u.status === 'banned' ? '恢复账号' : '停用账号'}</button>`}
+        <button class="mini" data-reset>重置密码</button>${u.av ? '<button class="mini" data-clav>清除头像</button>' : ''}${u.status === 'suspended' ? '' : `<button class="mini r" data-ban>${u.status === 'banned' ? '恢复账号' : '停用账号'}</button>`}${u.guest ? '<button class="mini o" data-rsp>换担保人</button>' : ''}`}
         <a class="mini" href="#/user/${esc(u.uid)}">主页</a></div>`}</div>`).join('');
     paint(ab);
     $('#go').onclick = () => adminUsers(ab, $('#q').value.trim());
@@ -1148,6 +1216,7 @@
       const again = () => adminUsers(ab, $('#q').value.trim());
       on('[data-role]', async () => { if (!await dialog({ title: u.role === 'admin' ? `撤销「${u.nick}」的管理员？` : `把「${u.nick}」设为管理员？`, text: u.role === 'admin' ? '' : '管理员可以审核注册、处理举报、删帖、禁言，但不能任免管理员。' })) return; await api('admin.setRole', { uid: u.uid, role: u.role === 'admin' ? 'user' : 'admin' }); toast('已设置'); again(); });
       on('[data-mute]', async () => { const v = await dialog({ title: `禁言「${u.nick}」`, text: '禁言期间只能看帖，不能发帖、回复、报名。填写天数：', input: true, type: 'number', value: '7', ok: '禁言' }); if (v == null) return; await api('admin.mute', { uid: u.uid, days: v }); toast('已禁言'); again(); });
+      on('[data-rsp]', async () => { const v = await dialog({ title: `给「${u.nick}」换担保人`, text: '填写新担保会员的昵称。暂停的亲友账号会随之恢复。', input: true, placeholder: '会员昵称', ok: '确定' }); if (!v) return; await api('admin.reassign', { uid: u.uid, nick: v.trim() }); toast('已换担保人'); again(); });
       on('[data-clav]', async () => { if (!await dialog({ title: `清除「${u.nick}」的头像？`, text: '会改回颜色头像，并通知对方。', danger: true, ok: '清除' })) return; await api('admin.clearAvatar', { uid: u.uid }); toast('已清除'); again(); });
       on('[data-unmute]', async () => { await api('admin.mute', { uid: u.uid, days: 0 }); toast('已解除'); again(); });
       on('[data-reset]', async () => { if (!await dialog({ title: `重置「${u.nick}」的密码？`, text: '会生成 8 位临时密码，对方登录后必须改密码。' })) return; const r = await api('admin.resetPassword', { uid: u.uid }); await dialog({ title: '临时密码', text: `请私下告诉 ${esc(u.name)}：<b>${esc(r.temp)}</b><br>（关闭后不再显示）`, ok: '知道了' }); });
@@ -1203,7 +1272,7 @@
       <button class="btn" id="bk">⬇️ 导出备份</button><p id="bkp"></p></div>`;
     $('#bk').onclick = async () => {
       const btn = $('#bk'); btn.disabled = true;
-      const colls = ['pf_settings', 'pf_users', 'pf_works', 'pf_nicks', 'pf_posts', 'pf_replies', 'pf_likes', 'pf_joins', 'pf_votes', 'pf_notices', 'pf_reports', 'pf_logs'];
+      const colls = ['pf_settings', 'pf_users', 'pf_works', 'pf_nicks', 'pf_posts', 'pf_replies', 'pf_likes', 'pf_joins', 'pf_votes', 'pf_notices', 'pf_reports', 'pf_logs', 'pf_invites'];
       const out = { app: '排友圈', version: 1, exportedAt: new Date().toISOString(), collections: {} };
       let n = 0;
       try {
@@ -1234,7 +1303,7 @@
   }
 
   // ---------------- 路由 ----------------
-  const PUBLIC = new Set(['login', 'register', 'setup', 'privacy', 'a2hs', 'rules']);
+  const PUBLIC = new Set(['login', 'register', 'setup', 'privacy', 'a2hs', 'rules', 'join']);
   async function route() {
     const h = (location.hash || '#/').slice(1);
     const [pathPart, qs] = h.split('?');
@@ -1243,7 +1312,7 @@
     const head = seg[0] || '';
     $('#sheet').hidden = true; $('#lightbox').hidden = true;
     if (!token && !PUBLIC.has(head)) { location.replace('#/login'); return; }
-    if (token && (head === 'login' || head === 'register')) { location.replace('#/'); return; }
+    if (token && (head === 'login' || head === 'register' || head === 'join')) { location.replace('#/'); return; }
     try {
       if (!head) return await pageHome(q);
       if (head === 'p') return await pagePost(seg[1], q);
@@ -1260,11 +1329,13 @@
         if (seg[1] === 'profile') return await pageProfile();
         if (seg[1] === 'pw') return await pagePassword();
         if (seg[1] === 'del') return await pageDeregister();
+        if (seg[1] === 'guests') return await pageGuests();
       }
       if (head === 'u') return await pagePostList(`${q.get('n') || '会员'}的帖子`, 'posts', { uid: seg[1] });
       if (head === 'admin') return await pageAdmin(seg[1] || 'pending');
       if (head === 'login') return await pageLogin();
       if (head === 'register') return await pageRegister();
+      if (head === 'join') return await pageJoin(q);
       if (head === 'setup') return await pageSetup();
       if (head === 'privacy' || head === 'a2hs') return pageDoc(head);
       if (head === 'rules') return await pageRules();

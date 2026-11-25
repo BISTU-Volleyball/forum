@@ -329,3 +329,11 @@ img.av { object-fit: cover; background: #e5ebf2; padding: 0; border: 0; }
 .bb .imgs { margin-top: 4px; grid-template-columns: repeat(3, minmax(0, 90px)); }
 .bb .imgs.one { grid-template-columns: 1fr; max-width: 200px; }
 .warnt { color: var(--red); font-weight: 700; }
+
+/* 亲友 */
+.badge.gst { background: #2e8b57; }
+.invbox { background: #fff6ec; border: 1px solid #f2b366; border-radius: 9px; padding: 10px 12px; margin: 10px 0; }
+.invbox .ic { font-size: 15px; } .invbox .ic b { font-size: 18px; letter-spacing: 2px; color: #a44f00; }
+.invbox .il { font-size: 12.5px; word-break: break-all; margin: 4px 0 8px; }
+.invbox .avops { margin: 0; }
+.gcard { margin: 8px 0; }
