@@ -7,6 +7,14 @@
   const view = $('#view');
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const linkify = s => esc(s).replace(/https?:\/\/[^\s<>"']+/g, u => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
+  function rich(text, mentions) {
+    let h = linkify(text);
+    for (const m of [...(mentions || [])].sort((a, b) => b.nick.length - a.nick.length)) {
+      const t = '@' + esc(m.nick);
+      h = h.split(t).join(`<span class="ulink at" data-u="${esc(m.uid)}">${t}</span>`);
+    }
+    return h;
+  }
   const WD = '日一二三四五六';
   const pad = n => String(n).padStart(2, '0');
   function rel(t) {
@@ -98,7 +106,7 @@
     const th = p.thumbs.length ? `<div class="thumbs">${p.thumbs.map(t => `<img loading="lazy" data-id="${esc(t.id)}" data-k="thumb" src="${esc(t.url)}" alt="">`).join('')}${p.nImages > 3 ? `<span class="more">共${p.nImages}张</span>` : ''}</div>` : '';
     return `<a class="card" href="#/p/${esc(p.id)}">
       <div class="t">${flags}${btag(p.board)}${esc(p.title)}</div>
-      ${p.excerpt ? `<div class="x">${esc(p.excerpt)}</div>` : ''}${p.event ? `<div class="evbox">${evLine(p.event)}</div>` : ''}${th}
+      ${p.excerpt ? `<div class="x">${esc(p.excerpt)}</div>` : ''}${p.event ? `<div class="evbox">${evLine(p.event)}</div>` : ''}${p.poll ? `<div class="pollmark">📊 投票${p.poll.closed ? '（已结束）' : ''} · ${p.poll.voters} 人参与</div>` : ''}${th}
       <div class="meta">${who(p.author)}<span>· ${rel(p.at)}</span><span class="r">💬 ${p.replies}　👍 ${p.likes}</span></div></a>`;
   }
   function imgGrid(imgs) {
@@ -339,6 +347,34 @@
     };
   }
 
+  // 选一位会员（用于 @）
+  let membersCache = null;
+  async function pickMember(cb) {
+    if (!membersCache || Date.now() - membersCache.at > 300e3) membersCache = { list: (await api('members')).list, at: Date.now() };
+    const s = $('#sheet');
+    s.innerHTML = `<div class="box"><div class="st">提到哪位会员？</div><div class="search"><input id="pmq" placeholder="搜昵称"></div><div id="pml" class="pml"></div><a class="cancel">取消</a></div>`;
+    s.hidden = false;
+    const draw = (k = '') => {
+      const rows = membersCache.list.filter(u => u.uid !== (me && me.uid) && (!k || u.nick.includes(k))).slice(0, 60);
+      $('#pml').innerHTML = rows.map(u => `<a data-n="${esc(u.nick)}">${avatar(u)} ${esc(u.nick)}</a>`).join('') || '<div class="empty">没有找到</div>';
+      paint($('#pml'));
+    };
+    draw();
+    $('#pmq').oninput = e => draw(e.target.value.trim());
+    s.onclick = e => {
+      const a = e.target.closest('a');
+      if (!a && e.target !== s) return;
+      s.hidden = true;
+      if (a && a.dataset.n) cb(a.dataset.n);
+    };
+  }
+  function insertAt(ta, text) {
+    const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? ta.value.length;
+    ta.value = ta.value.slice(0, a) + text + ta.value.slice(b);
+    ta.focus(); ta.selectionStart = ta.selectionEnd = a + text.length;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
   // ---------------- 页面框架 ----------------
   function frame({ title, back, nav, right }) {
     $('#top').hidden = false;
@@ -515,8 +551,22 @@
       if (!p.event) return '';
       const ev = p.event, past = ev.time < Date.now(), full = ev.n >= ev.cap;
       return `<div class="ev"><div class="row1"><b>🏐 ${esc(evTime(ev.time))}</b>　📍${esc(ev.place)}</div>
-        <div class="people">已报名 ${ev.n}/${ev.cap}${ev.people.length ? '：' + ev.people.map(x => esc(x.nick)).join('、') : ''}</div>
-        ${ev.joined ? `<button class="jbtn out" data-join>取消报名</button>` : past ? '<button class="jbtn" disabled>已结束</button>' : full ? '<button class="jbtn" disabled>人数已满</button>' : '<button class="jbtn" data-join>我要参加</button>'}</div>`;
+        <div class="people">已报名 ${ev.n}/${ev.cap} 人${ev.people.length ? '：' + ev.people.map(x => esc(x.nick) + (x.extra ? ` <b>+${x.extra}</b>` : '')).join('、') : ''}</div>
+        <div class="jrow">${ev.joined ? `${past ? '' : '<button class="jbtn" data-jedit>修改人数</button><button class="jbtn out" data-jleave>取消报名</button>'}<span class="jme">✅ 已报名${ev.myExtra ? `（带 ${ev.myExtra} 人）` : ''}</span>`
+          : past ? '<button class="jbtn" disabled>已结束</button>' : full ? '<button class="jbtn" disabled>人数已满</button>' : '<button class="jbtn" data-join>我要参加</button>'}
+          ${ev.people.length ? '<button class="jbtn out" data-copy>📋 复制名单</button>' : ''}</div></div>`;
+    }
+    function pollHtml() {
+      const pl = p.poll; if (!pl) return '';
+      const voted = !!pl.mine, show = voted || pl.closed;
+      const total = pl.counts.reduce((a, b) => a + b, 0) || 1;
+      const canManage = p.mine || isAdmin();
+      return `<div class="poll"><div class="ph">📊 ${pl.multi ? '多选' : '单选'}投票${pl.closed ? '（已结束）' : ''}<span>${pl.voters} 人参与</span></div>
+        ${pl.options.map((o, i) => show
+          ? `<div class="po res ${voted && pl.mine.includes(i) ? 'mine' : ''}"><div class="pbar" data-w="${Math.round(pl.counts[i] / total * 100)}"></div><span class="pt">${voted && pl.mine.includes(i) ? '✔ ' : ''}${esc(o)}</span><span class="pn">${pl.counts[i]} 票</span></div>`
+          : `<label class="po"><input type="${pl.multi ? 'checkbox' : 'radio'}" name="pv" value="${i}"> ${esc(o)}</label>`).join('')}
+        <div class="pact">${!show ? '<button class="jbtn" data-vote>投票</button>' : !pl.closed ? '<button class="jbtn out" data-revote>改投</button>' : ''}
+          ${canManage ? `<button class="jbtn out" data-pclose>${pl.closed ? '重新开放投票' : '结束投票'}</button>` : ''}</div></div>`;
     }
     function postHtml() {
       return `<div class="post">
@@ -524,14 +574,14 @@
         <div class="meta">${who(p.author)}<span>· ${rel(p.at)}</span></div>
         ${p.deleted ? '<div class="hint warn">该帖已删除（仅管理员可见）</div>' : ''}
         ${p.hidden ? `<div class="hint warn">${p.hiddenForMe ? '该帖被多位会员举报，等待管理员处理' : '该帖被多位会员举报，暂时对其他人隐藏，等待管理员处理'}</div>` : ''}
-        ${p.body ? `<div class="body">${linkify(p.body)}</div>` : ''}${imgGrid(p.images)}${evHtml()}
+        ${p.body ? `<div class="body">${rich(p.body, p.mentions)}</div>` : ''}${imgGrid(p.images)}${pollHtml()}${evHtml()}
         ${p.editedAt ? `<div class="edited">编辑于 ${rel(p.editedAt)}</div>` : ''}
         <div class="acts"><button class="act ${p.liked ? 'on' : ''}" data-like>👍 ${p.likes || '赞'}</button><span class="act">💬 ${p.replies}</span></div></div>`;
     }
     function floorHtml(r) {
       const main = r.deleted ? '<div class="gone">该楼已删除</div>'
         : r.hiddenForMe ? '<div class="gone">该楼被多位会员举报，等待管理员处理</div>'
-        : `${r.quote ? `<div class="quote">回复 ${r.quote.floor}楼 ${esc(r.quote.nick)}：${esc(r.quote.text)}</div>` : ''}${r.body ? `<div class="body">${linkify(r.body)}</div>` : ''}${imgGrid(r.images)}`;
+        : `${r.quote ? `<div class="quote">回复 ${r.quote.floor}楼 ${esc(r.quote.nick)}：${esc(r.quote.text)}</div>` : ''}${r.body ? `<div class="body">${rich(r.body, r.mentions)}</div>` : ''}${imgGrid(r.images)}`;
       return `<div class="floor" id="f${r.floor}" data-id="${esc(r.id)}">${ulink(r.author, avatar(r.author, 'm'))}<div class="main">
         <div class="hd">${ulink(r.author, `<span class="nk">${esc(r.author.nick)}</span>`)}${r.author.role ? `<span class="badge">${r.author.role === 'super' ? '超管' : '管理员'}</span>` : ''}${r.author.college ? `<span class="col">${esc(r.author.college)}</span>` : ''}<span>· ${rel(r.at)}${r.editedAt ? ' · 已编辑' : ''}</span><span class="fl">${r.floor}楼</span></div>
         ${main}${r.hidden && !r.hiddenForMe ? '<div class="hint warn">该楼被多人举报，暂时对其他人隐藏</div>' : ''}
@@ -546,12 +596,40 @@
     function bind() {
       const lk = $('[data-like]', view);
       if (lk) lk.onclick = async () => { const r = await api('like', { type: 'post', id: p.id }); p.liked = r.liked; p.likes = r.likes; lk.classList.toggle('on', r.liked); lk.textContent = `👍 ${r.likes || '赞'}`; };
-      const jb = $('[data-join]', view);
-      if (jb) jb.onclick = async () => {
-        jb.disabled = true;
-        try { const r = await api('join', { postId: p.id }); toast(r.joined ? '报名成功' : '已取消报名'); invalidate(); const d2 = await api('post', { id }); p.event = d2.post.event; render(); }
-        catch (e) { jb.disabled = false; }
+      const reloadEv = async () => { invalidate(); const d2 = await api('post', { id }); p.event = d2.post.event; p.poll = d2.post.poll; render(); };
+      const askExtra = async (v) => {
+        const x = await dialog({ title: v == null ? '报名参加' : '修改人数', text: '默认只算你自己 1 人。如果要带朋友（没有账号也可以），填带几位；不带就留空或填 0。', input: true, type: 'number', value: String(v || ''), placeholder: '带几位朋友（选填）', ok: v == null ? '报名' : '保存' });
+        if (x == null) return null;
+        const n = parseInt(x, 10) || 0;
+        if (n < 0 || n > 10) { toast('最多带 10 位'); return null; }
+        return n;
       };
+      const jb = $('[data-join]', view);
+      if (jb) jb.onclick = async () => { const n = await askExtra(); if (n == null) return; await api('join', { postId: p.id, extra: n }); toast(n ? `报名成功（共 ${n + 1} 人）` : '报名成功'); reloadEv(); };
+      const je = $('[data-jedit]', view);
+      if (je) je.onclick = async () => { const n = await askExtra(p.event.myExtra || 0); if (n == null) return; await api('join', { postId: p.id, extra: n }); toast('已修改'); reloadEv(); };
+      const jl = $('[data-jleave]', view);
+      if (jl) jl.onclick = async () => { if (!await dialog({ title: '取消报名？', ok: '取消报名', danger: true })) return; await api('join', { postId: p.id, leave: true }); toast('已取消报名'); reloadEv(); };
+      const jc = $('[data-copy]', view);
+      if (jc) jc.onclick = () => {
+        const ev = p.event;
+        const lines = [`【约球】${p.title}`, `时间：${evTime(ev.time)}`, `地点：${ev.place}`, `已报名 ${ev.n} 人（上限 ${ev.cap}）：`,
+          ...ev.people.map((x, i) => `${i + 1}. ${x.nick}${x.extra ? ` +${x.extra}` : ''}`), `报名：${location.href.split('?')[0]}`];
+        const text = lines.join('\n');
+        (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast('名单已复制，可以粘贴到微信群')).catch(() => dialog({ title: '复制名单', textarea: true, value: text, ok: '关闭' }));
+      };
+      // 投票
+      $$('.pbar', view).forEach(b => { b.style.width = b.dataset.w + '%'; });
+      const vb = $('[data-vote]', view);
+      if (vb) vb.onclick = async () => {
+        const ch = $$('input[name=pv]:checked', view).map(x => Number(x.value));
+        if (!ch.length) return toast('请先选择');
+        const r = await api('vote', { postId: p.id, choices: ch }); p.poll = r.poll; invalidate(); render(); toast('投票成功');
+      };
+      const rv = $('[data-revote]', view);
+      if (rv) rv.onclick = () => { p.poll = { ...p.poll, mine: null, _re: p.poll.mine }; render(); $$('input[name=pv]', view).forEach(x => { x.checked = (p.poll._re || []).includes(Number(x.value)); }); };
+      const pc = $('[data-pclose]', view);
+      if (pc) pc.onclick = async () => { const r = await api('pollClose', { postId: p.id, reopen: p.poll.closed }); p.poll = { ...r.poll, mine: p.poll.mine || p.poll._re || null }; render(); toast(r.poll.closed ? '投票已结束' : '投票已重新开放'); };
       const mr = $('#mr');
       if (mr) mr.onclick = async () => { mr.disabled = true; page++; const r = await api('replies', { id, page }); replies = replies.concat(r.list); more = r.more; render(); };
       $$('.floor', view).forEach(el => {
@@ -624,7 +702,7 @@
       return { quote() { toast('帖子已锁定'); } };
     }
     document.body.insertAdjacentHTML('beforeend', `<div class="rbar"><div class="in"><div class="qt" hidden><span></span><a>✕</a></div>
-      <div class="line"><textarea rows="1" maxlength="3000" placeholder="说点什么…"></textarea><button class="ib" title="图片">📷</button><button class="sb" disabled>发送</button></div><div class="pv"></div></div></div>`);
+      <div class="line"><textarea rows="1" maxlength="3000" placeholder="说点什么…"></textarea><button class="ib" data-at title="提到会员">＠</button><button class="ib" data-img title="图片">📷</button><button class="sb" disabled>发送</button></div><div class="pv"></div></div></div>`);
     document.body.classList.add('hasbar');
     const rb = $('.rbar'), ta = $('textarea', rb), sb = $('.sb', rb), qt = $('.qt', rb);
     let quote = null;
@@ -638,7 +716,8 @@
       const addEl = $('.pv .add', rb); if (addEl) addEl.hidden = !pk.count();
     }
     ta.oninput = () => { localStorage.setItem(draftKey, ta.value); upd(); };
-    $('.ib', rb).onclick = () => pk.open();
+    $('[data-img]', rb).onclick = () => pk.open();
+    $('[data-at]', rb).onclick = () => pickMember(n => { insertAt(ta, '@' + n + ' '); localStorage.setItem(draftKey, ta.value); upd(); });
     $('a', qt).onclick = () => { quote = null; qt.hidden = true; };
     sb.onclick = async () => {
       sb.disabled = true;
@@ -670,8 +749,13 @@
       <div class="evf" id="evf"><div class="t">约球信息</div>
         <label class="fld"><span>时间</span><input id="evt" type="datetime-local" value="${ev.time ? toLocalInput(ev.time) : ''}"></label>
         <div class="two"><label class="fld"><span>地点</span><input id="evp" maxlength="40" value="${esc(ev.place || '')}" placeholder="如：沙河体育馆"></label>
-        <label class="fld"><span>人数上限</span><input id="evc" type="number" min="2" max="60" value="${esc(ev.cap || 12)}"></label></div></div>
-      <label class="fld"><span>正文</span><textarea id="body" maxlength="5000" placeholder="想说的话…">${esc(post ? post.body : draft.body || '')}</textarea></label>
+        <label class="fld"><span>人数上限</span><input id="evc" type="number" min="2" max="60" value="${esc(ev.cap || 12)}"></label></div>
+        ${post ? '' : `<div class="two"><label class="fld chk"><input type="checkbox" id="evme" checked> 我也参加（算 1 人）</label>
+        <label class="fld"><span>我带几位朋友（选填）</span><input id="evx" type="number" min="0" max="10" placeholder="0"></label></div>`}</div>
+      <label class="fld"><span>正文</span><textarea id="body" maxlength="5000" placeholder="想说的话…（输入 @昵称 可以提醒某位会员）">${esc(post ? post.body : draft.body || '')}</textarea></label>
+      <div class="avops"><button class="mini" id="atb">＠ 提到会员</button></div>
+      ${post ? '' : `<div class="pollf"><label class="chk"><input type="checkbox" id="pon"> 📊 添加投票</label>
+        <div id="pbox" hidden><div id="popts"></div><div class="avops"><button class="mini" id="padd">＋ 加一个选项</button><label class="chk"><input type="checkbox" id="pmulti"> 可以多选</label></div></div></div>`}
       <div class="fld"><span>图片（最多 6 张，上传前自动压缩）</span></div><div class="pics" id="pics"></div>
     </div>`;
     const sel = $('#board'), evf = $('#evf');
@@ -679,15 +763,28 @@
     sel.onchange = () => { sync(); save(); }; sync();
     const pk = picker($('#pics'), 6);
     if (post) pk.set(post.images);
+    $('#atb').onclick = () => pickMember(n => insertAt($('#body'), '@' + n + ' '));
+    if ($('#pon')) {
+      const addOpt = v => { if ($$('#popts input').length >= 8) return toast('最多 8 个选项'); $('#popts').insertAdjacentHTML('beforeend', `<input class="popt" maxlength="30" placeholder="选项 ${$$('#popts input').length + 1}" value="${esc(v || '')}">`); };
+      addOpt(); addOpt();
+      $('#pon').onchange = () => { $('#pbox').hidden = !$('#pon').checked; };
+      $('#padd').onclick = () => addOpt();
+    }
     const save = () => { if (!editId) localStorage.setItem(draftKey, JSON.stringify({ board: sel.value, title: $('#title').value, body: $('#body').value, event: { place: $('#evp').value, cap: $('#evc').value } })); };
     view.addEventListener('input', save);
     $('#home-link').onclick = async () => {
       if (pk.busy()) return toast('图片还在上传，请稍等');
       const b = boardOf(sel.value);
       const data = { board: sel.value, title: $('#title').value, body: $('#body').value, images: pk.ids() };
+      if ($('#pon') && $('#pon').checked) {
+        const opts = $$('#popts input').map(x => x.value.trim()).filter(Boolean);
+        if (opts.length < 2) return toast('投票至少要填 2 个选项');
+        data.poll = { options: opts, multi: $('#pmulti').checked };
+      }
       if (b && b.event) {
         if (!$('#evt').value) return toast('请填写约球时间');
         data.event = { time: new Date($('#evt').value).toISOString(), place: $('#evp').value, cap: $('#evc').value };
+        if ($('#evme')) { data.event.selfJoin = $('#evme').checked; data.event.extra = $('#evx').value; }
       }
       const btn = $('#home-link'); btn.disabled = true;
       try {
@@ -719,6 +816,7 @@
           case 'quote': return `在《${t}》中回复了你<div class="q">${esc(n.text)}</div>`;
           case 'like': return `赞了你的${n.replyId ? '回复' : '帖子'}<div class="q">${esc(n.text)}</div>`;
           case 'join': return `报名了你的约球《${esc(n.text)}》`;
+          case 'mention': return `在《${t}》中提到了你<div class="q">${esc(n.text)}</div>`;
           default: return esc(n.text);
         }
       };
@@ -785,7 +883,7 @@
     $('#ttl').textContent = peer.nick;
     let msgs = d.list, more = d.more;
     const canSend = peer.active && (peer.allowDm || isAdmin()) && uid !== me.uid;
-    const bubble = m => `<div class="bub ${m.mine ? 'me' : ''}" data-id="${esc(m.id)}">${m.mine ? '' : avatar(peer, 'm')}<div class="bb">${m.deleted ? '<i>该消息已被管理员删除</i>' : linkify(m.body)}</div></div>`;
+    const bubble = m => `<div class="bub ${m.mine ? 'me' : ''}" data-id="${esc(m.id)}">${m.mine ? '' : avatar(peer, 'm')}<div class="bb">${m.deleted ? '<i>该消息已被管理员删除</i>' : (m.body ? linkify(m.body) : '') + (m.images && m.images.length ? imgGrid(m.images) : '')}</div></div>`;
     function render(keepBottom = true) {
       let lastT = 0;
       view.innerHTML = `<div class="chat"><div class="tip-top">私信只有你们两人能看到。遇到骚扰，点一下对方的消息就能举报。</div>
@@ -795,7 +893,8 @@
       if (keepBottom) window.scrollTo(0, document.body.scrollHeight);
       const ob = $('#older');
       if (ob) ob.onclick = async () => { const r = await api('dmThread', { uid, before: msgs[0].at }); msgs = r.list.concat(msgs); more = r.more; render(false); window.scrollTo(0, 0); };
-      $$('.bub:not(.me) .bb', view).forEach(el => el.onclick = () => {
+      $$('.bub:not(.me) .bb', view).forEach(el => el.onclick = (ev) => {
+        if (ev.target.closest('img, a')) return;
         const id = el.parentElement.dataset.id;
         sheet('', [{ label: '举报这条私信', danger: true, fn: async () => {
           const v = await dialog({ title: '举报私信', text: '管理员只会看到这一条被举报的消息。', input: true, placeholder: '原因（如骚扰、广告）', ok: '提交举报' });
@@ -806,14 +905,18 @@
     render();
     if (me) { me.dmUnread = Math.max(0, (me.dmUnread || 0)); meAt = 0; }
     if (canSend) {
-      document.body.insertAdjacentHTML('beforeend', `<div class="rbar"><div class="in"><div class="line"><textarea rows="1" maxlength="1000" placeholder="发私信…"></textarea><button class="sb" disabled>发送</button></div></div></div>`);
+      document.body.insertAdjacentHTML('beforeend', `<div class="rbar"><div class="in"><div class="line"><textarea rows="1" maxlength="1000" placeholder="发私信…"></textarea><button class="ib" data-img title="图片">📷</button><button class="sb" disabled>发送</button></div><div class="pv"></div></div></div>`);
       document.body.classList.add('hasbar');
       const rb = $('.rbar'), ta = $('textarea', rb), sb = $('.sb', rb);
-      const upd = () => { sb.disabled = !ta.value.trim(); ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight + 2) + 'px'; };
+      let pk = null;
+      const upd = () => { if (!pk) return; sb.disabled = pk.busy() || (!ta.value.trim() && !pk.ids().length); ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight + 2) + 'px'; const ad = $('.pv .add', rb); if (ad) ad.hidden = !pk.count(); };
+      pk = picker($('.pv', rb), 3, upd);
+      upd();
       ta.oninput = upd;
+      $('[data-img]', rb).onclick = () => pk.open();
       sb.onclick = async () => {
         sb.disabled = true;
-        try { const r = await api('dmSend', { to: uid, body: ta.value }); msgs.push(r.msg); ta.value = ''; render(); } catch (e) { /* 已提示 */ } finally { upd(); }
+        try { const r = await api('dmSend', { to: uid, body: ta.value, images: pk.ids() }); msgs.push(r.msg); ta.value = ''; pk.set([]); render(); } catch (e) { /* 已提示 */ } finally { upd(); }
       };
     } else {
       document.body.insertAdjacentHTML('beforeend', `<div class="rbar"><div class="in locked">${uid === me.uid ? '不能给自己发私信' : !peer.active ? '该账号已注销或停用' : '对方设置了不接收私信'}</div></div>`);
@@ -841,7 +944,7 @@
     view.innerHTML = `<div class="prof">${avatar(me, 'l')}<div><div class="n">${esc(me.nick)}</div><div class="s">${esc(me.college)}${me.showCollege ? '' : '（不对外显示）'} · ${esc(me.name)} · 工号 ${esc(me.workNo)}</div>
       <div class="s">${me.role === 'super' ? '超级管理员 · ' : me.role === 'admin' ? '管理员 · ' : ''}${new Date(me.at).getFullYear()}年${new Date(me.at).getMonth() + 1}月加入</div></div></div>
       ${me.muteUntil > Date.now() ? `<div class="hint warn">你已被禁言，${esc(new Date(me.muteUntil).toLocaleString())} 后恢复</div>` : ''}
-      ${a ? `<div class="list"><a class="li" href="#/admin/pending">🛠️ 管理后台<span class="r">${me.pending ? `<span class="cnt">审核 ${me.pending}</span> ` : ''}${me.reports ? `<span class="cnt">举报 ${me.reports}</span>` : ''} ›</span></a></div>` : ''}
+      ${a ? `<div class="list"><a class="li" href="#/admin/pending">🛠️ 管理后台<span class="r">${me.pending ? `<span class="cnt">审核 ${me.pending}</span> ` : ''}${me.reports ? `<span class="cnt">举报 ${me.reports}</span>` : ''}${backupDue() ? ' <span class="cnt">该备份了</span>' : ''} ›</span></a></div>` : ''}
       <div class="list">
         <a class="li" href="#/msg">🔔 消息<span class="r">${me.unread ? `<span class="cnt">${me.unread}</span>` : ''} ›</span></a>
         <a class="li" href="#/msg?t=dm">✉️ 私信<span class="r">${me.dmUnread ? `<span class="cnt">${me.dmUnread}</span>` : ''} ›</span></a>
@@ -992,9 +1095,10 @@
     await loadMe(true);
     if (!isAdmin()) { view.innerHTML = '<div class="empty">需要管理员权限</div>'; return; }
     const tabs = [['pending', '注册审核', me.pending], ['reports', '举报', me.reports], ['users', '用户'], ['trash', '回收站'], ['settings', '设置'], ['logs', '操作记录']];
+    if (me.role === 'super') tabs.push(['backup', '备份', backupDue() ? '!' : 0]);
     view.innerHTML = `<div class="atabs">${tabs.map(([k, n, c]) => `<a href="#/admin/${k}" class="${k === tab ? 'on' : ''}">${n}${c ? `<b>${c}</b>` : ''}</a>`).join('')}</div><div id="ab"><div class="loading">加载中…</div></div>`;
     const ab = $('#ab');
-    const fn = { pending: adminPending, reports: adminReports, users: adminUsers, trash: adminTrash, settings: adminSettings, logs: adminLogs }[tab] || adminPending;
+    const fn = { pending: adminPending, reports: adminReports, users: adminUsers, trash: adminTrash, settings: adminSettings, logs: adminLogs, backup: adminBackup }[tab] || adminPending;
     await fn(ab);
     paint(ab);
   }
@@ -1087,6 +1191,42 @@
       };
     }
     render();
+  }
+  const backupDue = () => me && me.role === 'super' && Date.now() - (me.lastBackupAt || 0) > 7 * 86400e3;
+  async function adminBackup(ab) {
+    const last = me.lastBackupAt;
+    ab.innerHTML = `<div class="doc"><h2>数据备份</h2>
+      <p>上次备份：<b>${last ? esc(tm(last)) : '从未备份'}</b>${backupDue() ? '　<span class="warnt">建议现在备份一次</span>' : ''}</p>
+      <p>建议<b>每周备份一次</b>。备份文件包含帖子、回复、报名、投票、通知和会员资料（含姓名、工号、加密后的密码），<b>请妥善保存，不要外传</b>。</p>
+      <p>不包含：私信（只有对话双方能看，管理员也不导出）和图片文件（图片仍在腾讯云存储里，备份中保留了图片编号）。</p>
+      <p>请在<b>电脑浏览器</b>里操作，微信里可能无法下载文件。</p>
+      <button class="btn" id="bk">⬇️ 导出备份</button><p id="bkp"></p></div>`;
+    $('#bk').onclick = async () => {
+      const btn = $('#bk'); btn.disabled = true;
+      const colls = ['pf_settings', 'pf_users', 'pf_works', 'pf_nicks', 'pf_posts', 'pf_replies', 'pf_likes', 'pf_joins', 'pf_votes', 'pf_notices', 'pf_reports', 'pf_logs'];
+      const out = { app: '排友圈', version: 1, exportedAt: new Date().toISOString(), collections: {} };
+      let n = 0;
+      try {
+        for (const c of colls) {
+          out.collections[c] = [];
+          for (let page = 0; ; page++) {
+            $('#bkp').textContent = `正在导出 ${c}（已 ${n} 条）…`;
+            const r = await api('admin.backup', { coll: c, page });
+            out.collections[c].push(...r.rows); n += r.rows.length;
+            if (!r.more) break;
+          }
+        }
+        const blob = new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `排友圈备份-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a); a.click(); a.remove();
+        const r = await api('admin.backupDone', { n });
+        me.lastBackupAt = r.at;
+        $('#bkp').textContent = `✅ 已导出 ${n} 条记录（${(blob.size / 1024).toFixed(0)} KB），请到"下载"文件夹查看。`;
+      } catch (e) { $('#bkp').textContent = '导出失败：' + (e.message || '网络问题'); }
+      btn.disabled = false;
+    };
   }
   async function adminLogs(ab) {
     const { list } = await api('admin.logs');
