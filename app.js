@@ -676,7 +676,7 @@
       if (jc) jc.onclick = () => {
         const ev = p.event;
         const lines = [`【约球】${p.title}`, `时间：${evTime(ev.time)}`, `地点：${ev.place}`, `已报名 ${ev.n} 人（上限 ${ev.cap}）：`,
-          ...ev.people.map((x, i) => `${i + 1}. ${x.nick}${x.extra ? ` +${x.extra}` : ''}`), `报名：${location.href.split('?')[0]}`];
+          ...ev.people.map((x, i) => `${i + 1}. ${x.nick}${x.extra ? ` +${x.extra}` : ''}`)];
         const text = lines.join('\n');
         (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast('名单已复制，可以粘贴到微信群')).catch(() => dialog({ title: '复制名单', textarea: true, value: text, ok: '关闭' }));
       };
