@@ -337,3 +337,5 @@ img.av { object-fit: cover; background: #e5ebf2; padding: 0; border: 0; }
 .invbox .il { font-size: 12.5px; word-break: break-all; margin: 4px 0 8px; }
 .invbox .avops { margin: 0; }
 .gcard { margin: 8px 0; }
+
+.atall { color: #fff; background: var(--orange); border-radius: 4px; padding: 0 4px; font-weight: 700; }

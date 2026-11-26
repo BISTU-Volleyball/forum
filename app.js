@@ -11,7 +11,7 @@
     let h = linkify(text);
     for (const m of [...(mentions || [])].sort((a, b) => b.nick.length - a.nick.length)) {
       const t = '@' + esc(m.nick);
-      h = h.split(t).join(`<span class="ulink at" data-u="${esc(m.uid)}">${t}</span>`);
+      h = h.split(t).join(m.uid === '*' ? `<span class="atall">${t}</span>` : `<span class="ulink at" data-u="${esc(m.uid)}">${t}</span>`);
     }
     return h;
   }
@@ -352,11 +352,12 @@
   async function pickMember(cb) {
     if (!membersCache || Date.now() - membersCache.at > 300e3) membersCache = { list: (await api('members')).list, at: Date.now() };
     const s = $('#sheet');
-    s.innerHTML = `<div class="box"><div class="st">提到哪位会员？</div><div class="search"><input id="pmq" placeholder="搜昵称"></div><div id="pml" class="pml"></div><a class="cancel">取消</a></div>`;
+    s.innerHTML = `<div class="box"><div class="st">提到哪位会员？（每次最多 ${isAdmin() ? '50 人，可 @所有人' : me && me.kind === 'guest' ? '5 人' : '10 人'}）</div><div class="search"><input id="pmq" placeholder="搜昵称"></div><div id="pml" class="pml"></div><a class="cancel">取消</a></div>`;
     s.hidden = false;
     const draw = (k = '') => {
       const rows = membersCache.list.filter(u => u.uid !== (me && me.uid) && (!k || u.nick.includes(k))).slice(0, 60);
-      $('#pml').innerHTML = rows.map(u => `<a data-n="${esc(u.nick)}">${avatar(u)} ${esc(u.nick)}</a>`).join('') || '<div class="empty">没有找到</div>';
+      $('#pml').innerHTML = (isAdmin() && !k ? '<a data-n="所有人"><span class="av sysav">全</span> <b>所有人</b>（通知全部会员和亲友）</a>' : '')
+        + (rows.map(u => `<a data-n="${esc(u.nick)}">${avatar(u)} ${esc(u.nick)}</a>`).join('') || '<div class="empty">没有找到</div>');
       paint($('#pml'));
     };
     draw();
@@ -787,6 +788,7 @@
         const r = await api('reply', { postId: p.id, body: ta.value, images: pk.ids(), quoteId: quote ? quote.id : undefined });
         ta.value = ''; localStorage.removeItem(draftKey); pk.set([]); quote = null; qt.hidden = true; ta.blur();
         await onSent(r.floor);
+        if (r.mentionOver) toast(`@ 的人太多，有 ${r.mentionOver} 人没有收到提醒`, 3500);
       } catch (e) { /* 已提示 */ } finally { upd(); }
     };
     upd();
@@ -851,7 +853,7 @@
       const btn = $('#home-link'); btn.disabled = true;
       try {
         if (editId) { await api('editPost', { id: editId, ...data }); toast('已保存'); invalidate(); history.back(); }
-        else { const r = await api('newPost', data); localStorage.removeItem(draftKey); invalidate(); location.replace(`#/p/${r.id}`); }
+        else { const r = await api('newPost', data); localStorage.removeItem(draftKey); invalidate(); location.replace(`#/p/${r.id}`); if (r.mentionOver) setTimeout(() => toast(`@ 的人太多，有 ${r.mentionOver} 人没有收到提醒`, 3500), 600); }
       } catch (e) { btn.disabled = false; }
     };
   }
@@ -878,7 +880,7 @@
           case 'quote': return `在《${t}》中回复了你<div class="q">${esc(n.text)}</div>`;
           case 'like': return `赞了你的${n.replyId ? '回复' : '帖子'}<div class="q">${esc(n.text)}</div>`;
           case 'join': return `报名了你的约球《${esc(n.text)}》`;
-          case 'mention': return `在《${t}》中提到了你<div class="q">${esc(n.text)}</div>`;
+          case 'mention': return `在《${t}》中${n.all ? '@了所有人' : '提到了你'}<div class="q">${esc(n.text)}</div>`;
           default: return esc(n.text);
         }
       };
