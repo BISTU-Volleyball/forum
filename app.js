@@ -103,7 +103,7 @@
   }
   function card(p) {
     const flags = (p.pinned ? '<span class="tag pin">置顶</span>' : '') + (p.featured ? '<span class="tag ft">精</span>' : '') + (p.locked ? '<span class="tag lk">锁</span>' : '');
-    const th = p.thumbs.length ? `<div class="thumbs">${p.thumbs.map(t => `<img loading="lazy" data-id="${esc(t.id)}" data-k="thumb" src="${esc(t.url)}" alt="">`).join('')}${p.nImages > 3 ? `<span class="more">共${p.nImages}张</span>` : ''}</div>` : '';
+    const th = p.thumbs.length ? `<div class="thumbs">${p.thumbs.map(t => `<span class="tw${/g$/.test(t.id) ? ' gif' : ''}"><img loading="lazy" data-id="${esc(t.id)}" data-k="thumb" src="${esc(t.url)}" alt=""></span>`).join('')}${p.nImages > 3 ? `<span class="more">共${p.nImages}张</span>` : ''}</div>` : '';
     return `<a class="card" href="#/p/${esc(p.id)}">
       <div class="t">${flags}${btag(p.board)}${esc(p.title)}</div>
       ${p.excerpt ? `<div class="x">${esc(p.excerpt)}</div>` : ''}${p.event ? `<div class="evbox">${evLine(p.event)}</div>` : ''}${p.poll ? `<div class="pollmark">📊 投票${p.poll.closed ? '（已结束）' : ''} · ${p.poll.voters} 人参与</div>` : ''}${th}
@@ -112,7 +112,9 @@
   function imgGrid(imgs) {
     if (!imgs.length) return '';
     const cls = imgs.length === 1 ? 'one' : imgs.length === 2 || imgs.length === 4 ? 'two' : '';
-    return `<div class="imgs ${cls}">${imgs.map(i => `<img loading="lazy" data-id="${esc(i.id)}" data-k="${imgs.length === 1 ? 'full' : 'thumb'}" data-full="${esc(i.full)}" src="${esc(imgs.length === 1 ? i.full : i.thumb)}" alt="">`).join('')}</div>`;
+    // 动图（id 以 g 结尾）在帖子里直接播放原图
+    return `<div class="imgs ${cls}">${imgs.map(i => { const g = /g$/.test(i.id), big = imgs.length === 1 || g;
+      return `<span class="iw${g ? ' gif' : ''}"><img loading="lazy" data-id="${esc(i.id)}" data-k="${big ? 'full' : 'thumb'}" data-full="${esc(i.full)}" src="${esc(big ? i.full : i.thumb)}" alt=""></span>`; }).join('')}</div>`;
   }
 
   // 签名图片链接过期后自动换新
@@ -198,7 +200,15 @@
       const fr = new FileReader(); fr.onload = () => res({ b64: String(fr.result).split(',')[1], size: b.size }); fr.readAsDataURL(b);
     }, 'image/jpeg', q));
   }
+  const fileB64 = f => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = () => rej(new Error('读取图片失败')); fr.readAsDataURL(f); });
   async function compress(file) {
+    if (file.type === 'image/gif' || /\.gif$/i.test(file.name || '')) {
+      // 动图：原样上传（不压缩，保留动画），缩略图取第一帧
+      if (file.size > 900 * 1024) throw new Error(`动图太大（${(file.size / 1024 / 1024).toFixed(1)}MB），请选 900KB 以内的动图`);
+      const first = await loadImg(file);
+      const t = await toB64(draw(first, 420), 0.72);
+      return { data: await fileB64(file), thumb: t.b64, gif: true };
+    }
     const img = await loadImg(file);
     let c = draw(img, 1280), q = 0.8, r = await toB64(c, q);
     while (r.size > 400 * 1024 && q > 0.5) { q -= 0.1; r = await toB64(c, q); }
@@ -301,7 +311,7 @@
       }
     };
     await Promise.all([worker(), worker(), worker()]);
-    return api('upDone', { uploadId: up, nf, nt });
+    return api('upDone', { uploadId: up, nf, nt, gif: !!z.gif });
   }
   // 图片选择器：items = [{ id, url, busy }]
   function picker(host, max, onChange) {

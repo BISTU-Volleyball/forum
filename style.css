@@ -339,3 +339,10 @@ img.av { object-fit: cover; background: #e5ebf2; padding: 0; border: 0; }
 .gcard { margin: 8px 0; }
 
 .atall { color: #fff; background: var(--orange); border-radius: 4px; padding: 0 4px; font-weight: 700; }
+
+/* 动图 */
+.imgs .iw { position: relative; display: block; min-width: 0; }
+.imgs .iw img { display: block; }
+.tw { position: relative; width: 31%; max-width: 120px; }
+.thumbs .tw img { width: 100%; max-width: none; display: block; }
+.iw.gif::after, .tw.gif::after { content: "GIF"; position: absolute; left: 4px; bottom: 4px; background: rgba(0,0,0,.6); color: #fff; font-size: 10px; font-weight: 700; padding: 0 4px; border-radius: 3px; pointer-events: none; }
