@@ -76,7 +76,24 @@
     d.hidden = !n; d.textContent = n > 99 ? '99+' : n;
     const a = me ? (me.pending || 0) + (me.reports || 0) : 0;
     d2.hidden = !a; d2.textContent = a;
+    document.title = (n ? `(${n > 99 ? '99+' : n}) ` : '') + '排友圈 · 信息科大教职工排协';
+    try { if (navigator.setAppBadge) { if (n) navigator.setAppBadge(n); else navigator.clearAppBadge(); } } catch (e) { /* 不支持 */ }
   }
+  // 页面开着时每分钟查一次新消息；切到后台不查，回到前台立刻查
+  let lastPoll = 0;
+  async function pollMe() {
+    if (!token || document.visibilityState !== 'visible' || Date.now() - lastPoll < 50e3) return;
+    lastPoll = Date.now();
+    try {
+      const old = me ? (me.unread || 0) + (me.dmUnread || 0) : 0;
+      me = { ...(me || {}), ...(await api('me', {}, { silent: true })).me }; meAt = Date.now();
+      updateDots();
+      const n = (me.unread || 0) + (me.dmUnread || 0);
+      if (n > old && /^#\/(msg)?(\?.*)?$/.test(location.hash || '#/')) toast(`你有 ${n} 条新消息`);
+    } catch (e) { /* 忽略 */ }
+  }
+  setInterval(pollMe, 60e3);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { lastPoll = 0; pollMe(); } });
   function logout(expired) {
     token = ''; me = null; localStorage.removeItem('pf_token');
     for (const k in listCache) delete listCache[k];
@@ -509,6 +526,59 @@
         view.innerHTML = `<div class="form"><div class="empty"><b>✅</b>申请已提交</div><div class="hint">管理员审核通过后，就可以用<b>登录名和密码</b>登录了。</div><a class="btn" href="#/login">返回登录</a></div>`;
       } catch (err) { /* 已提示 */ } finally { btn.disabled = false; }
     };
+  }
+
+  // ---------------- 新消息通知（网页推送） ----------------
+  const b64u = s => { const p = '='.repeat((4 - s.length % 4) % 4); const r = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(r, c => c.charCodeAt(0)); };
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  async function currentSub() {
+    if (!pushSupported()) return null;
+    const reg = await navigator.serviceWorker.getRegistration();
+    return reg ? reg.pushManager.getSubscription() : null;
+  }
+  async function pageNotify() {
+    frame({ title: '新消息通知', back: true });
+    await loadConfig();
+    if (!cfg.vapid) { cfg.at = 0; await loadConfig().catch(() => {}); }
+    const sub = await currentSub().catch(() => null);
+    const perm = 'Notification' in window ? Notification.permission : 'unsupported';
+    let state, tip = '';
+    if (isIOS && !standalone) { state = 'needA2HS'; }
+    else if (!pushSupported() || !cfg.vapid) { state = 'unsupported'; }
+    else if (perm === 'denied') { state = 'denied'; }
+    else state = sub ? 'on' : 'off';
+    if (state === 'needA2HS') tip = `<div class="hint warn">iPhone 需要先把排友圈<b>添加到主屏幕</b>，再从桌面图标打开排友圈，回到这里开启通知（需要 iOS 16.4 及以上）。</div><p><a href="#/a2hs">怎么添加到主屏幕 ›</a></p>`;
+    if (state === 'unsupported') tip = `<div class="hint">这个手机或浏览器不支持后台通知。${isIOS ? '请确认 iOS 版本在 16.4 及以上，并从桌面图标打开排友圈。' : '多数国产安卓手机没有谷歌推送服务，收不到网页通知；打开排友圈时，底部"消息"上的红点会每分钟自动更新。'}</div>`;
+    if (state === 'denied') tip = `<div class="hint warn">你之前拒绝了通知权限。请到手机的"设置 → 通知 → 排友圈"（或浏览器的网站设置）里打开，再回到这里。</div>`;
+    view.innerHTML = `<div class="doc"><h2>新消息通知</h2>
+      <p>开启后，即使没打开排友圈，有人<b>回复你、@你、给你发私信、报名你的约球</b>时，手机会弹出通知，桌面图标上也会显示未读数字。点赞不提醒。</p>
+      ${tip}
+      ${state === 'on' ? '<div class="hint">✅ 这台设备已开启通知</div><br><button class="btn l" id="ptest">发一条测试通知</button><button class="btn d" id="poff">关闭这台设备的通知</button>' : ''}
+      ${state === 'off' ? '<button class="btn o" id="pon">🔔 开启新消息通知</button>' : ''}
+      <p class="alt">每台手机要分别开启。换手机或清除浏览器数据后需要重新开启。</p></div>`;
+    const on = $('#pon');
+    if (on) on.onclick = async () => {
+      on.disabled = true;
+      try {
+        const pm = await Notification.requestPermission();
+        if (pm !== 'granted') { toast('没有获得通知权限'); return pageNotify(); }
+        const reg = await navigator.serviceWorker.register('sw.js');
+        await navigator.serviceWorker.ready;
+        const s2 = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(cfg.vapid) });
+        await api('pushSubscribe', { sub: s2.toJSON(), ua: navigator.userAgent.slice(0, 120) });
+        toast('通知已开启'); pageNotify();
+      } catch (e) { toast(e.data ? e.message : '开启失败：' + (e.message || '浏览器不支持')); on.disabled = false; }
+    };
+    const off = $('#poff');
+    if (off) off.onclick = async () => {
+      const s2 = await currentSub();
+      if (s2) { await api('pushUnsubscribe', { endpoint: s2.endpoint }).catch(() => {}); await s2.unsubscribe().catch(() => {}); }
+      toast('已关闭'); pageNotify();
+    };
+    const tt = $('#ptest');
+    if (tt) tt.onclick = async () => { await api('pushTest'); toast('已发送，稍等几秒看看手机通知'); };
   }
 
   async function pageGuests() {
@@ -1036,6 +1106,7 @@
         <div class="li" id="sd">✉️ 接收私信<span class="sw ${me.allowDm ? 'on' : ''}"></span></div>
         <a class="li" href="#/me/pw">🔑 修改密码<span class="r">›</span></a></div>
       <div class="list">
+        <a class="li" href="#/me/notify">🔔 新消息通知<span class="r">›</span></a>
         <a class="li" href="#/a2hs">📱 添加到手机桌面<span class="r">›</span></a>
         <a class="li" href="#/rules">📜 排友圈公约<span class="r">›</span></a>
         <a class="li" href="#/welcome">👋 再看一遍欢迎页<span class="r">›</span></a>
@@ -1126,7 +1197,8 @@
       <h3>在微信里打开的</h3><p>先点右上角 <b>⋯</b> →「在浏览器打开」，再按下面的方法操作。也可以点 <b>⋯</b> →「浮窗」，在微信里随时打开。</p>
       <h3>iPhone（Safari）</h3><ol><li>点底部的分享按钮（方框加向上箭头）</li><li>选「添加到主屏幕」→「添加」</li></ol>
       <h3>安卓手机（自带浏览器 / Chrome / Edge）</h3><ol><li>点浏览器菜单（⋮ 或 ≡）</li><li>选「添加到主屏幕」或「添加到桌面」「安装应用」</li></ol>
-      <p>添加后桌面上会出现排协图标「排友圈」。登录一次 90 天内不用再登录。</p></div>`
+      <p>添加后桌面上会出现排协图标「排友圈」。登录一次 90 天内不用再登录。</p>
+      <p>iPhone 添加后，从桌面图标打开排友圈，到"我的 → 新消息通知"开启，就能收到回复、@、私信提醒。</p></div>`
       : `<div class="doc">${PRIVACY}</div>`;
   }
 
@@ -1342,6 +1414,7 @@
         if (seg[1] === 'pw') return await pagePassword();
         if (seg[1] === 'del') return await pageDeregister();
         if (seg[1] === 'guests') return await pageGuests();
+        if (seg[1] === 'notify') return await pageNotify();
       }
       if (head === 'u') return await pagePostList(`${q.get('n') || '会员'}的帖子`, 'posts', { uid: seg[1] });
       if (head === 'admin') return await pageAdmin(seg[1] || 'pending');
@@ -1362,5 +1435,7 @@
   navDepth = 1;
   route();
 
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
+  // 从通知点进来：Service Worker 发来要打开的页面
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.open) location.hash = e.data.open; });
 })();
