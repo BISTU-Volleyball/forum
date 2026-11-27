@@ -82,7 +82,7 @@
   // 页面开着时每分钟查一次新消息；切到后台不查，回到前台立刻查
   let lastPoll = 0;
   async function pollMe() {
-    if (!token || document.visibilityState !== 'visible' || Date.now() - lastPoll < 50e3) return;
+    if (!token || document.visibilityState !== 'visible' || Date.now() - lastPoll < 170e3) return;
     lastPoll = Date.now();
     try {
       const old = me ? (me.unread || 0) + (me.dmUnread || 0) : 0;
@@ -92,7 +92,7 @@
       if (n > old && /^#\/(msg)?(\?.*)?$/.test(location.hash || '#/')) toast(`你有 ${n} 条新消息`);
     } catch (e) { /* 忽略 */ }
   }
-  setInterval(pollMe, 60e3);
+  setInterval(pollMe, 180e3);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { lastPoll = 0; pollMe(); } });
   function logout(expired) {
     token = ''; me = null; localStorage.removeItem('pf_token');
@@ -1069,7 +1069,7 @@
       document.body.insertAdjacentHTML('beforeend', `<div class="rbar"><div class="in locked">${uid === me.uid ? '不能给自己发私信' : !peer.active ? '该账号已注销或停用' : '对方设置了不接收私信'}</div></div>`);
       document.body.classList.add('hasbar');
     }
-    // 打开对话时每 10 秒查一次新消息（页面在后台时不查，10 分钟后停止）
+    // 打开对话时每 30 秒查一次新消息（页面在后台时不查，10 分钟后停止）
     const started = Date.now();
     pollTimer = setInterval(async () => {
       if (document.visibilityState !== 'visible') return;
@@ -1080,7 +1080,7 @@
         const fresh = r.list.filter(m => !msgs.some(x => x.id === m.id));
         if (fresh.length) { const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80; msgs = msgs.concat(fresh); render(atBottom); }
       } catch (e) { /* 忽略 */ }
-    }, 10000);
+    }, 30000);
   }
 
   // ---------------- 我的 ----------------

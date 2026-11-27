@@ -1,6 +1,6 @@
 // 排友圈离线缓存：页面文件先用手机里的缓存秒开，同时在后台更新（下次打开生效）。接口请求不经过这里。
-const CACHE = 'pyq-v13';
-const SHELL = ['./', 'index.html', 'style.css?v=13', 'app.js?v=13', 'config.js?v=13', 'manifest.webmanifest', 'img/logo.png', 'img/favicon.png', 'img/icon-192.png', 'img/ball-line.svg'];
+const CACHE = 'pyq-v14';
+const SHELL = ['./', 'index.html', 'style.css?v=14', 'app.js?v=14', 'config.js?v=14', 'manifest.webmanifest', 'img/logo.png', 'img/favicon.png', 'img/icon-192.png', 'img/ball-line.svg'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
