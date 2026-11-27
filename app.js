@@ -785,7 +785,7 @@
     function floorMenu(r) {
       const mine = r.author.uid === me.uid, items = [];
       if (mine) items.push({ label: '编辑', fn: async () => { const v = await dialog({ title: `编辑 ${r.floor}楼`, textarea: true, value: r.body, ok: '保存' }); if (v == null) return; await api('editReply', { id: r.id, body: v }); r.body = v.trim(); r.editedAt = Date.now(); render(); toast('已保存'); } });
-      if (mine || isAdmin()) items.push({ label: mine ? '删除' : '删除（管理员）', danger: true, fn: async () => { if (!await dialog({ title: `删除 ${r.floor}楼？`, ok: '删除', danger: true })) return; await api('delReply', { id: r.id }); r.deleted = true; render(); toast('已删除'); } });
+      if (mine || isAdmin()) items.push({ label: mine ? '删除' : '删除（管理员）', danger: true, fn: async () => { if (!await dialog({ title: `删除 ${r.floor}楼？`, ok: '删除', danger: true })) return; await api('delReply', { id: r.id }); replies = replies.filter(x => x.id !== r.id); p.replies = Math.max(0, p.replies - 1); invalidate(); render(); toast('已删除'); } });
       if (!mine) items.push({ label: '举报', fn: () => report('reply', r.id) });
       sheet(`${r.floor}楼 ${r.author.nick}`, items);
     }
